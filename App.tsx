@@ -25,25 +25,6 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize welcome message only when user is logged in and message list is empty
-  useEffect(() => {
-    if (user && messages.length === 0) {
-      // Small delay to allow UI to settle after login transition
-      const timer = setTimeout(() => {
-        playSound('message');
-        setMessages([
-          {
-            id: 'init-1',
-            role: MessageRole.PROTOCOL,
-            content: `[STATUS]: Online\n[ID]: ${user.name}\n[SYSTEM]: DeepAgent Active. AutoML, Security, & Media Generation (Veo/Imagen) Online.\n[READY]: Awaiting strategic directive.`,
-            timestamp: Date.now()
-          }
-        ]);
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [user]); // Removed 'messages' dependency to prevent loop, relies on length check inside
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };

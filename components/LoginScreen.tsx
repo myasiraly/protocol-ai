@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ShieldCheck, Terminal, Loader2, AlertCircle, User, Plus, ArrowRight, X, Mail, ChevronLeft, Lock } from 'lucide-react';
+import { ShieldCheck, Loader2, AlertCircle, ArrowRight, Mail, ChevronLeft, Lock } from 'lucide-react';
 import { UserProfile } from '../types';
 import { playSound } from '../utils/audio';
 
@@ -97,8 +97,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   }, []);
 
   useEffect(() => {
+    // If no Client ID is provided, gracefully default to Simulation Mode without warning
     if (!clientId) {
-      console.warn("Google Client ID not found. Defaulting to Simulation Mode.");
       setIsSimulation(true);
       setTimeout(() => setStatus('READY'), 800);
       return;
@@ -117,7 +117,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         if (window.google?.accounts?.id) {
            setStatus('READY');
         } else {
-           console.warn("Google Script unreachable. Fallback to Simulation.");
+           // Silent fallback
            setIsSimulation(true);
            setStatus('READY');
         }
@@ -172,7 +172,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
              <div className="flex flex-col items-center mb-8">
                 <div className="w-16 h-16 bg-gradient-to-br from-slate-800 to-slate-950 rounded-2xl flex items-center justify-center mb-6 shadow-pop border border-white/5 relative">
                     <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10"></div>
-                    <Terminal size={32} className="text-sky-400 drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]" />
+                    {/* Custom AI Logo */}
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-sky-400 drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]">
+                       <path d="M14 7V17M14 7C14 4.79086 12.2091 3 10 3H7C4.79086 3 3 4.79086 3 7V17C3 19.2091 4.79086 21 7 21H10C12.2091 21 14 19.2091 14 17M14 17H16M21 21V11M21 7V7.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                 </div>
                 <h1 className="text-2xl font-bold tracking-[0.2em] text-white font-sans mb-2 text-center">PROTOCOL</h1>
                 <div className="flex items-center gap-2">

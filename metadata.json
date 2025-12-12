@@ -2,7 +2,6 @@
   "name": "PROTOCOL",
   "description": "An elite DeepAgent interface. Features multi-step workflow automation, Veo Video Generation, Imagen 3 Image Generation, AutoML assistance, and Security-First Architecture.",
   "requestFramePermissions": [
-    "microphone",
-    "camera"
+    "microphone"
   ]
 }
