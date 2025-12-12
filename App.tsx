@@ -5,7 +5,7 @@ import { ProtocolHeader } from './components/ProtocolHeader';
 import { MessageCard } from './components/MessageCard';
 import { InputConsole } from './components/InputConsole';
 import { LoginScreen } from './components/LoginScreen';
-import { Message, MessageRole, UserProfile, Attachment } from './types';
+import { Message, MessageRole, UserProfile, Attachment, ImageGenerationSize } from './types';
 import { sendMessageToProtocol } from './services/geminiService';
 import { playSound } from './utils/audio';
 
@@ -64,7 +64,7 @@ const App: React.FC = () => {
     localStorage.removeItem('protocol_user');
   };
 
-  const handleSendMessage = async (text: string, useDeepAgent: boolean, attachments: Attachment[]) => {
+  const handleSendMessage = async (text: string, useDeepAgent: boolean, attachments: Attachment[], imageSize: ImageGenerationSize) => {
     const newUserMessage: Message = {
       id: uuidv4(),
       role: MessageRole.USER,
@@ -86,7 +86,7 @@ const App: React.FC = () => {
          }
       }
 
-      const { text: responseText, generatedMedia } = await sendMessageToProtocol(messages, text, useDeepAgent, attachments);
+      const { text: responseText, generatedMedia } = await sendMessageToProtocol(messages, text, useDeepAgent, attachments, imageSize);
 
       const newProtocolMessage: Message = {
         id: uuidv4(),

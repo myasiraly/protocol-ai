@@ -4,6 +4,8 @@ export enum MessageRole {
   PROTOCOL = 'protocol'
 }
 
+export type ImageGenerationSize = '1K' | '2K' | '4K';
+
 export interface Attachment {
   type: 'image' | 'video';
   mimeType: string;

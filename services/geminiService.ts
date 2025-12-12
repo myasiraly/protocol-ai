@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, VIDEO_MODEL_NAME } from '../constants';
-import { Message, MessageRole, Attachment } from '../types';
+import { Message, MessageRole, Attachment, ImageGenerationSize } from '../types';
 
 let genAIInstance: GoogleGenAI | null = null;
 
@@ -16,7 +16,7 @@ const getGenAI = (): GoogleGenAI => {
 
 // --- Media Generation Functions ---
 
-const generateImage = async (prompt: string): Promise<Attachment | null> => {
+const generateImage = async (prompt: string, size: ImageGenerationSize): Promise<Attachment | null> => {
   const ai = getGenAI();
   try {
     const response = await ai.models.generateContent({
@@ -25,7 +25,7 @@ const generateImage = async (prompt: string): Promise<Attachment | null> => {
       config: {
         imageConfig: {
           aspectRatio: "16:9",
-          imageSize: "4K" // High quality request
+          imageSize: size // "1K", "2K", or "4K"
         }
       }
     });
@@ -95,16 +95,21 @@ export const sendMessageToProtocol = async (
   history: Message[],
   newMessage: string,
   useDeepAgent: boolean = false,
-  attachments: Attachment[] = []
+  attachments: Attachment[] = [],
+  imageSize: ImageGenerationSize = '1K'
 ): Promise<{ text: string, generatedMedia?: Attachment[] }> => {
   const ai = getGenAI();
 
   const modelName = useDeepAgent ? THINKING_MODEL_NAME : MODEL_NAME;
   
+  // Configure tools with both Search and Maps
   const config: any = {
     systemInstruction: PROTOCOL_SYSTEM_INSTRUCTION,
     temperature: 0.2,
-    tools: [{ googleSearch: {} }],
+    tools: [
+      { googleSearch: {} },
+      { googleMaps: {} }
+    ],
   };
 
   if (useDeepAgent) {
@@ -174,8 +179,8 @@ export const sendMessageToProtocol = async (
 
   if (imageMatch) {
     const prompt = imageMatch[1];
-    responseText = responseText.replace(imageTagRegex, '\n[STATUS]: Generating High-Fidelity Image...\n');
-    const image = await generateImage(prompt);
+    responseText = responseText.replace(imageTagRegex, `\n[STATUS]: Generating ${imageSize} High-Fidelity Image...\n`);
+    const image = await generateImage(prompt, imageSize);
     if (image) generatedMedia.push(image);
   }
 
@@ -186,17 +191,33 @@ export const sendMessageToProtocol = async (
     if (video) generatedMedia.push(video);
   }
 
-  // --- Grounding Sources ---
+  // --- Grounding Sources (Search & Maps) ---
   const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
   if (groundingChunks && groundingChunks.length > 0) {
     const sources = groundingChunks
       .map((chunk: any) => {
+        // Handle Google Search Web Links
         if (chunk.web?.uri && chunk.web?.title) {
           return `* [${chunk.web.title}](${chunk.web.uri})`;
         }
+        // Handle Google Maps Links
+        if (chunk.maps?.uri && chunk.maps?.title) {
+           return `* 📍 [${chunk.maps.title}](${chunk.maps.uri})`;
+        }
+        // Handle Google Maps Place Answer Sources (e.g. review snippets)
+        if (chunk.maps?.placeAnswerSources && chunk.maps.placeAnswerSources.length > 0) {
+           return chunk.maps.placeAnswerSources.map((source: any) => {
+             if (source.uri && source.title) {
+               return `* 📍 [${source.title}](${source.uri})`;
+             }
+             return null;
+           }).filter(Boolean).join('\n');
+        }
         return null;
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .flat(); // Flatten in case maps returned an array
+
     const uniqueSources = [...new Set(sources)];
     if (uniqueSources.length > 0) {
       responseText += `\n\n### INTEL SOURCES\n${uniqueSources.join('\n')}`;

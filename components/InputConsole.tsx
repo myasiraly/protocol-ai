@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Command, Paperclip, X, Zap, Image as ImageIcon } from 'lucide-react';
+import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Command, Paperclip, X, Zap, Image as ImageIcon, Settings2 } from 'lucide-react';
 import { playSound } from '../utils/audio';
-import { Attachment } from '../types';
+import { Attachment, ImageGenerationSize } from '../types';
 
 interface InputConsoleProps {
-  onSend: (text: string, useDeepAgent: boolean, attachments: Attachment[]) => void;
+  onSend: (text: string, useDeepAgent: boolean, attachments: Attachment[], imageSize: ImageGenerationSize) => void;
   isLoading: boolean;
 }
 
@@ -14,6 +14,8 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
   const [isListening, setIsListening] = useState(false);
   const [isDeepAgent, setIsDeepAgent] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [imageSize, setImageSize] = useState<ImageGenerationSize>('1K');
+  const [showConfig, setShowConfig] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -26,9 +28,10 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
       return;
     }
     playSound('click');
-    onSend(input, isDeepAgent, attachments);
+    onSend(input, isDeepAgent, attachments, imageSize);
     setInput('');
     setAttachments([]);
+    setShowConfig(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -126,6 +129,29 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
              </div>
         </div>
 
+        {/* Config Menu Popover */}
+        {showConfig && (
+           <div className="absolute bottom-full right-0 mb-4 bg-[#0b1221]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 w-64 animate-slide-up z-20">
+              <h3 className="text-[10px] font-mono uppercase tracking-widest text-slate-400 mb-3 border-b border-white/5 pb-2">Image Gen Resolution</h3>
+              <div className="flex gap-2">
+                 {(['1K', '2K', '4K'] as ImageGenerationSize[]).map((size) => (
+                    <button
+                       key={size}
+                       type="button"
+                       onClick={() => { setImageSize(size); playSound('click'); }}
+                       className={`flex-1 py-2 text-xs font-mono font-bold rounded-lg border transition-all ${
+                          imageSize === size 
+                            ? 'bg-sky-500/20 border-sky-500/50 text-sky-400' 
+                            : 'bg-white/5 border-transparent text-slate-500 hover:bg-white/10 hover:text-slate-300'
+                       }`}
+                    >
+                       {size}
+                    </button>
+                 ))}
+              </div>
+           </div>
+        )}
+
         {/* Main Capsule Container */}
         <div className={`
             relative bg-[#0b1221]/80 backdrop-blur-xl border transition-all duration-300 rounded-[1.5rem] shadow-2xl overflow-hidden flex flex-col
@@ -159,8 +185,22 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
 
           <form onSubmit={handleSubmit} className="relative flex flex-col">
             <div className="flex items-end gap-2 p-2">
-               {/* Left Actions (Attach) */}
-               <div className="flex items-center pb-2 pl-2">
+               {/* Left Actions (Attach + Config) */}
+               <div className="flex items-center pb-2 pl-2 gap-1">
+                   <button
+                    type="button"
+                    onClick={() => setShowConfig(!showConfig)}
+                    className={`
+                      w-9 h-9 rounded-full flex items-center justify-center transition-all
+                      ${showConfig ? 'text-sky-400 bg-white/5' : 'text-slate-400 hover:text-white hover:bg-white/5'}
+                    `}
+                    title="Generation Settings"
+                   >
+                     <Settings2 size={16} />
+                   </button>
+
+                   <div className="h-4 w-[1px] bg-white/10 mx-1"></div>
+
                    <input 
                     type="file" 
                     ref={fileInputRef} 
@@ -261,7 +301,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
         <div className="mt-3 text-center flex items-center justify-center gap-2 opacity-30 transition-opacity duration-300 hover:opacity-60">
            <Command size={10} className="text-slate-400" />
            <span className="text-[10px] text-slate-400 font-mono tracking-[0.2em] uppercase">
-             {isLoading ? 'Processing...' : 'Ready'}
+             {isLoading ? 'Processing...' : 'Ready'} | Image Res: <span className="text-sky-400">{imageSize}</span>
            </span>
         </div>
       </div>
