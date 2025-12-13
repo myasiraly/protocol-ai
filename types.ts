@@ -29,6 +29,14 @@ export interface UserProfile {
   picture?: string;
 }
 
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ProtocolState {
   messages: Message[];
   isLoading: boolean;

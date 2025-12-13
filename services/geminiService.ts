@@ -1,9 +1,12 @@
 
-import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Modality, Chat } from "@google/genai";
 import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, VIDEO_MODEL_NAME } from '../constants';
 import { Message, MessageRole, Attachment, ImageGenerationSize } from '../types';
 
 let genAIInstance: GoogleGenAI | null = null;
+
+// Export Chat type for use in App.tsx
+export type ChatSession = Chat;
 
 const getGenAI = (): GoogleGenAI => {
   // Always create a new instance to ensure fresh API key usage if it changes (e.g. via prompt dialog)
@@ -73,9 +76,6 @@ const generateVideo = async (prompt: string): Promise<Attachment | null> => {
 
     const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
     if (videoUri) {
-      // Fetch the actual bytes to avoid CORS/Auth issues in <img> tags if possible, 
-      // or return the URI with key appended for direct playback.
-      // For Veo, we often need to fetch with key.
       const apiKey = process.env.API_KEY;
       return {
         type: 'video',
@@ -89,20 +89,12 @@ const generateVideo = async (prompt: string): Promise<Attachment | null> => {
   return null;
 };
 
-// --- Main Chat Function ---
+// --- Chat Session Management ---
 
-export const sendMessageToProtocol = async (
-  history: Message[],
-  newMessage: string,
-  useDeepAgent: boolean = false,
-  attachments: Attachment[] = [],
-  imageSize: ImageGenerationSize = '1K'
-): Promise<{ text: string, generatedMedia?: Attachment[] }> => {
+export const createChatSession = (history: Message[], useDeepAgent: boolean = false): ChatSession => {
   const ai = getGenAI();
-
   const modelName = useDeepAgent ? THINKING_MODEL_NAME : MODEL_NAME;
-  
-  // Configure tools with both Search and Maps
+
   const config: any = {
     systemInstruction: PROTOCOL_SYSTEM_INSTRUCTION,
     temperature: 0.2,
@@ -113,7 +105,6 @@ export const sendMessageToProtocol = async (
   };
 
   if (useDeepAgent) {
-    // DeepAgent uses high thinking budget for complex planning
     config.thinkingConfig = { thinkingBudget: 32768 };
   }
 
@@ -138,13 +129,22 @@ export const sendMessageToProtocol = async (
     };
   });
 
-  const chat = ai.chats.create({
+  return ai.chats.create({
     model: modelName,
     config: config,
     history: formattedHistory
   });
+};
+
+export const sendMessageToSession = async (
+  chat: ChatSession,
+  newMessage: string,
+  attachments: Attachment[] = [],
+  imageSize: ImageGenerationSize = '1K'
+): Promise<{ text: string, generatedMedia?: Attachment[] }> => {
 
   let messagePayload: any = newMessage;
+  
   if (attachments.length > 0) {
     const parts: any[] = [];
     attachments.forEach(att => {
@@ -170,7 +170,6 @@ export const sendMessageToProtocol = async (
 
   // --- Parse for Media Generation Tags ---
   
-  // Regex to find [GENERATE_IMAGE: ...] or [GENERATE_VIDEO: ...]
   const imageTagRegex = /\[GENERATE_IMAGE:\s*(.*?)\]/;
   const videoTagRegex = /\[GENERATE_VIDEO:\s*(.*?)\]/;
 
@@ -196,15 +195,12 @@ export const sendMessageToProtocol = async (
   if (groundingChunks && groundingChunks.length > 0) {
     const sources = groundingChunks
       .map((chunk: any) => {
-        // Handle Google Search Web Links
         if (chunk.web?.uri && chunk.web?.title) {
           return `* [${chunk.web.title}](${chunk.web.uri})`;
         }
-        // Handle Google Maps Links
         if (chunk.maps?.uri && chunk.maps?.title) {
            return `* 📍 [${chunk.maps.title}](${chunk.maps.uri})`;
         }
-        // Handle Google Maps Place Answer Sources (e.g. review snippets)
         if (chunk.maps?.placeAnswerSources && chunk.maps.placeAnswerSources.length > 0) {
            return chunk.maps.placeAnswerSources.map((source: any) => {
              if (source.uri && source.title) {
@@ -216,7 +212,7 @@ export const sendMessageToProtocol = async (
         return null;
       })
       .filter(Boolean)
-      .flat(); // Flatten in case maps returned an array
+      .flat();
 
     const uniqueSources = [...new Set(sources)];
     if (uniqueSources.length > 0) {
@@ -245,6 +241,32 @@ export const generateSpeech = async (text: string): Promise<string> => {
   const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   if (!audioData) throw new Error("No audio data returned.");
   return audioData;
+};
+
+export const generateConversationTitle = async (messages: Message[]): Promise<string> => {
+  const ai = getGenAI();
+  const transcript = messages.slice(0, 4).map(m => `${m.role}: ${m.content}`).join('\n');
+  
+  const prompt = `
+    Analyze the following conversation initiation and generate a SHORT, PROFESSIONAL, CONCISE title (3-5 words).
+    Examples: "Tokyo Logistics Strategy", "Quarterly Report Analysis", "React Component Debugging".
+    Transcript:
+    ${transcript}
+    Directives: No quotes. No "Title:" prefix. Focus on intent.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { temperature: 0.3, maxOutputTokens: 20 }
+    });
+    let title = response.text?.trim() || "";
+    title = title.replace(/^["']|["']$/g, '').trim();
+    return title || "New Protocol";
+  } catch (error) {
+    return "Protocol Log";
+  }
 };
 
 const decode = (base64: string): Uint8Array => {

@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { User as UserIcon, LogOut } from 'lucide-react';
+import { User as UserIcon, LogOut, Menu } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface ProtocolHeaderProps {
   user: UserProfile | null;
   onLogout?: () => void;
+  onToggleSidebar?: () => void;
 }
 
-export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({ user, onLogout }) => {
+export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({ user, onLogout, onToggleSidebar }) => {
   return (
     <header className="fixed top-0 left-0 right-0 h-24 z-40 flex flex-col transition-all duration-500 bg-gradient-to-b from-protocol-bg via-protocol-bg/90 to-transparent backdrop-blur-[2px]">
       
@@ -18,7 +19,16 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({ user, onLogout }
         <div className="absolute top-4 left-4 right-4 bottom-0 border border-white/5 rounded-2xl bg-white/[0.02] backdrop-blur-md shadow-sm pointer-events-none" />
 
         {/* Brand */}
-        <div className="relative z-10 flex items-center gap-5 pl-4">
+        <div className="relative z-10 flex items-center gap-4 pl-4">
+          
+          {/* Sidebar Toggle */}
+          <button 
+            onClick={onToggleSidebar}
+            className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-all mr-1"
+          >
+            <Menu size={20} />
+          </button>
+
           <div className="w-10 h-10 bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-black/40 border border-white/10 group overflow-hidden">
             <div className="absolute inset-0 bg-sky-500/20 blur-lg group-hover:bg-sky-500/30 transition-all opacity-0 group-hover:opacity-100" />
             {/* Custom AI Logo */}
@@ -26,7 +36,7 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({ user, onLogout }
                <path d="M14 7V17M14 7C14 4.79086 12.2091 3 10 3H7C4.79086 3 3 4.79086 3 7V17C3 19.2091 4.79086 21 7 21H10C12.2091 21 14 19.2091 14 17M14 17H16M21 21V11M21 7V7.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <div className="flex flex-col justify-center">
+          <div className="flex flex-col justify-center hidden sm:flex">
             <h1 className="text-base font-bold tracking-[0.25em] text-white font-sans leading-none mb-1">PROTOCOL</h1>
             <div className="flex items-center gap-2">
               <span className="flex h-1.5 w-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.6)] animate-pulse-slow"></span>

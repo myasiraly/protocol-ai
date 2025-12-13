@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, MessageRole, Attachment } from '../types';
 import { User, Cpu, Square, Loader2, Play, ExternalLink, Video, FileText, Copy, Check } from 'lucide-react';
@@ -81,20 +80,44 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
     });
   };
 
-  // Helper to parse links [Title](url) in text
-  const parseTextWithLinks = (text: string) => {
-    const regex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
-    const parts = [];
+  // Helper to parse bold text **bold**
+  const parseBold = (text: string) => {
+    const parts: React.ReactNode[] = [];
+    const boldRegex = /\*\*([^\*]+)\*\*/g;
     let lastIndex = 0;
     let match;
 
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = boldRegex.exec(text)) !== null) {
       if (match.index > lastIndex) {
         parts.push(text.substring(lastIndex, match.index));
       }
       parts.push(
+        <strong key={`bold-${match.index}`} className="font-bold text-sky-100">
+          {match[1]}
+        </strong>
+      );
+      lastIndex = boldRegex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+    return parts.length > 0 ? parts : [text];
+  };
+
+  // Helper to parse formatting: links [Title](url) and bold **text**
+  const formatText = (text: string) => {
+    const parts: React.ReactNode[] = [];
+    const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = linkRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(...parseBold(text.substring(lastIndex, match.index)));
+      }
+      parts.push(
         <a 
-          key={match.index} 
+          key={`link-${match.index}`} 
           href={match[2]} 
           target="_blank" 
           rel="noopener noreferrer"
@@ -104,12 +127,12 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
           <ExternalLink size={10} />
         </a>
       );
-      lastIndex = regex.lastIndex;
+      lastIndex = linkRegex.lastIndex;
     }
     if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
+      parts.push(...parseBold(text.substring(lastIndex)));
     }
-    return parts.length > 0 ? parts : text;
+    return parts.length > 0 ? parts : parseBold(text);
   };
 
   // Render Generated Media (Images/Videos) for Protocol
@@ -159,7 +182,7 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
     if (!isProtocol) {
       return (
         <div className="font-sans text-[15px] leading-relaxed text-slate-200 whitespace-pre-wrap">
-           {text}
+           {formatText(text)}
         </div>
       );
     }
@@ -190,7 +213,7 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
                 <span className="text-sky-300 font-bold tracking-tight inline-block bg-sky-950/40 px-2 py-1 rounded border border-sky-500/20 shadow-[0_0_10px_-4px_rgba(56,189,248,0.4)] whitespace-nowrap">
                   {tag}
                 </span>
-                <span className="text-slate-300 font-medium tracking-wide leading-relaxed">{rest.join(':')}</span>
+                <span className="text-slate-300 font-medium tracking-wide leading-relaxed">{formatText(rest.join(':'))}</span>
               </div>
             );
           }
@@ -202,7 +225,7 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
               <div key={idx} className="flex items-start gap-4 mb-2 pl-2 group">
                 <div className="w-1 h-1 rounded-full bg-slate-500 mt-2.5 shrink-0 group-hover:bg-sky-400 group-hover:shadow-[0_0_8px_rgba(56,189,248,0.8)] transition-all" />
                 <span className="text-slate-300 leading-relaxed text-[15px] font-sans font-light tracking-wide">
-                  {parseTextWithLinks(content)}
+                  {formatText(content)}
                 </span>
               </div>
             );
@@ -216,7 +239,7 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
               <div key={idx} className="flex items-start gap-4 mb-3 pl-1 group p-3 rounded-lg hover:bg-white/[0.02] transition-colors border border-transparent hover:border-white/5">
                  <span className="font-mono text-sky-500/80 text-xs mt-0.5 font-bold">{number}</span>
                  <span className="text-slate-200 leading-relaxed text-[15px] font-sans font-light tracking-wide">
-                   {parseTextWithLinks(content)}
+                   {formatText(content)}
                  </span>
               </div>
             );
@@ -227,7 +250,7 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
           
           // Standard Text
           return <p key={idx} className="mb-2 text-slate-300 leading-relaxed text-[15px] font-sans font-light tracking-wide pl-1">
-            {parseTextWithLinks(line)}
+            {formatText(line)}
           </p>;
         })}
         

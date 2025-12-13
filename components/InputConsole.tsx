@@ -16,10 +16,20 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [imageSize, setImageSize] = useState<ImageGenerationSize>('1K');
   const [showConfig, setShowConfig] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const silenceTimerRef = useRef<any>(null);
+  
+  // We use a ref to track input for the speech closure to access the latest state
+  const inputRef = useRef(input);
+
+  // Sync ref with state
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -34,6 +44,21 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
     setShowConfig(false);
   };
 
+  const handleAutoSend = () => {
+    const currentInput = inputRef.current;
+    if ((!currentInput.trim() && attachments.length === 0) || isLoading) return;
+
+    playSound('message'); // Distinct sound for auto-send
+    onSend(currentInput, isDeepAgent, attachments, imageSize);
+    
+    setInput('');
+    setAttachments([]);
+    setIsListening(false); // Stop listening after auto-send
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -43,29 +68,73 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    if (Math.random() > 0.8) playSound('hover'); 
+    // Remove hover sound on type for cleaner feel
+  };
+
+  const processFile = (file: File) => {
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result as string;
+        if (result) {
+          const base64String = result.split(',')[1];
+          const newAttachment: Attachment = {
+            type: 'image',
+            mimeType: file.type,
+            data: base64String
+          };
+          setAttachments(prev => [...prev, newAttachment]);
+          playSound('click');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      Array.from(e.target.files).forEach((file: File) => {
-        if (file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64String = (reader.result as string).split(',')[1];
-            const newAttachment: Attachment = {
-              type: 'image',
-              mimeType: file.type,
-              data: base64String
-            };
-            setAttachments(prev => [...prev, newAttachment]);
-            playSound('click');
-          };
-          reader.readAsDataURL(file);
-        }
-      });
+      Array.from(e.target.files).forEach(processFile);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    let foundImage = false;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          processFile(file);
+          foundImage = true;
+        }
+      }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) {
+      return;
+    }
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      Array.from(e.dataTransfer.files).forEach(processFile);
+      playSound('success');
+    }
   };
 
   const removeAttachment = (index: number) => {
@@ -80,33 +149,75 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
     }
   }, [input]);
 
+  // Speech Recognition Logic
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true; // Changed to true for smoother visual feedback
       recognition.lang = 'en-US';
+      
       recognition.onstart = () => setIsListening(true);
+      
       recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        const current = event.resultIndex;
+        const transcript = event.results[current][0].transcript;
+        const isFinal = event.results[current].isFinal;
+
+        if (transcript.trim()) {
+           // We only update state if it's final or interim, logic depends on preference.
+           // To avoid duplication, we can check isFinal or just overwrite the end of the string.
+           // A simpler approach for continuous dictation + manual input mixing:
+           
+           if (isFinal) {
+             setInput(prev => {
+               const trimmedPrev = prev.trim();
+               const cleanTranscript = transcript.trim();
+               return trimmedPrev ? `${trimmedPrev} ${cleanTranscript}` : cleanTranscript;
+             });
+             
+             // Reset Silence Timer on final result
+             if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+             
+             // Set new timer for Auto-Send (1.5 seconds silence)
+             silenceTimerRef.current = setTimeout(() => {
+                handleAutoSend();
+             }, 1500);
+           }
+        }
       };
-      recognition.onend = () => setIsListening(false);
-      recognition.onerror = (event: any) => {
-        console.error("Speech recognition error", event.error);
+
+      recognition.onend = () => {
+        // If we stopped but didn't auto-send (e.g. user clicked mic button), clean up
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         setIsListening(false);
-        playSound('error');
       };
+
+      recognition.onerror = () => {
+        setIsListening(false);
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      };
+
       recognitionRef.current = recognition;
     }
-  }, []);
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.abort();
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    };
+  }, []); // Empty dependency array, relying on refs for latest state
 
   const toggleListening = () => {
     if (!recognitionRef.current) return;
     playSound('click');
-    if (isListening) recognitionRef.current.stop();
-    else recognitionRef.current.start();
+    if (isListening) {
+      recognitionRef.current.stop();
+      // If manually stopping, we do NOT auto-send, we just stop listening.
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    } else {
+      recognitionRef.current.start();
+    }
   };
 
   const toggleDeepAgent = () => {
@@ -118,7 +229,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
     <div className="fixed bottom-0 left-0 right-0 z-50 px-4 md:px-6 pb-6 pt-4 bg-gradient-to-t from-protocol-bg via-protocol-bg to-transparent flex justify-center">
       <div className="w-full max-w-3xl relative">
         
-        {/* DeepAgent Mode Badge - Indicator floating above */}
+        {/* DeepAgent Mode Badge */}
         <div className={`
              absolute -top-10 left-0 right-0 flex justify-center transition-all duration-300 pointer-events-none
              ${isDeepAgent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}
@@ -153,15 +264,31 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
         )}
 
         {/* Main Capsule Container */}
-        <div className={`
+        <div 
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`
             relative bg-[#0b1221]/80 backdrop-blur-xl border transition-all duration-300 rounded-[1.5rem] shadow-2xl overflow-hidden flex flex-col
             ${isDeepAgent 
               ? 'border-emerald-500/40 shadow-[0_0_40px_-10px_rgba(16,185,129,0.1)]' 
               : 'border-white/10 shadow-black/50'}
             focus-within:border-white/20
+            ${isListening ? 'ring-1 ring-red-500/50 shadow-[0_0_30px_-5px_rgba(239,68,68,0.2)]' : ''}
+            ${isDragging ? 'ring-2 ring-sky-500 shadow-[0_0_40px_rgba(56,189,248,0.3)] bg-sky-900/20' : ''}
           `}>
           
-          {/* Attachment Preview Area - Inside Capsule */}
+          {/* Drag Overlay */}
+          {isDragging && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-sm pointer-events-none animate-fade-in">
+              <div className="text-sky-400 font-mono text-sm tracking-widest uppercase flex items-center gap-2 border border-sky-500/30 bg-sky-900/40 px-6 py-3 rounded-xl shadow-lg">
+                <Paperclip size={18} />
+                <span>Drop Visual Intel Here</span>
+              </div>
+            </div>
+          )}
+
+          {/* Attachment Preview Area */}
           {attachments.length > 0 && (
             <div className="px-4 pt-4 pb-2 flex gap-3 overflow-x-auto custom-scrollbar border-b border-white/5 bg-white/[0.02]">
               {attachments.map((att, idx) => (
@@ -185,7 +312,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
 
           <form onSubmit={handleSubmit} className="relative flex flex-col">
             <div className="flex items-end gap-2 p-2">
-               {/* Left Actions (Attach + Config) */}
+               {/* Left Actions */}
                <div className="flex items-center pb-2 pl-2 gap-1">
                    <button
                     type="button"
@@ -231,7 +358,8 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
                   value={input}
                   onChange={handleChange}
                   onKeyDown={handleKeyDown}
-                  placeholder={isListening ? "Listening..." : isDeepAgent ? "DeepAgent Directive..." : "Command Protocol..."}
+                  onPaste={handlePaste}
+                  placeholder={isListening ? "Listening... (Auto-send on silence)" : isDeepAgent ? "DeepAgent Directive..." : "Command Protocol... (Drag images or paste)"}
                   disabled={isLoading}
                   rows={1}
                   className={`
@@ -243,7 +371,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
 
                 {/* Right Actions */}
                 <div className="flex items-center gap-2 pb-1 pr-1">
-                   
                    {/* DeepAgent Toggle */}
                    <button
                     type="button"
@@ -255,7 +382,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
                          : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border-transparent'}
                     `}
-                    title="Toggle DeepAgent (Complex Workflows)"
+                    title="Toggle DeepAgent"
                    >
                     {isDeepAgent ? <Zap size={14} className="fill-current" /> : <BrainCircuit size={16} />}
                     <span className="hidden md:inline-block">DeepAgent</span>
@@ -269,7 +396,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
                       disabled={isLoading}
                       className={`w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${
                         isListening 
-                          ? 'text-red-400 bg-red-500/10 animate-pulse' 
+                          ? 'text-red-400 bg-red-500/10 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)] ring-1 ring-red-500/30' 
                           : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
@@ -286,14 +413,13 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
                       ${isDeepAgent 
                         ? 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20' 
                         : 'bg-sky-500 hover:bg-sky-400 shadow-sky-500/20'}
-                      text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:shadow-none hover:scale-105 active:scale-95
+                      text-white disabled:opacity-30 disabled:cursor-not-allowed hover:scale-105 active:scale-95
                     `}
                    >
                     {isLoading ? <Loader2 size={18} className="animate-spin" /> : <ArrowUp size={20} />}
                    </button>
                 </div>
             </div>
-
           </form>
         </div>
         
@@ -301,7 +427,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading })
         <div className="mt-3 text-center flex items-center justify-center gap-2 opacity-30 transition-opacity duration-300 hover:opacity-60">
            <Command size={10} className="text-slate-400" />
            <span className="text-[10px] text-slate-400 font-mono tracking-[0.2em] uppercase">
-             {isLoading ? 'Processing...' : 'Ready'} | Image Res: <span className="text-sky-400">{imageSize}</span>
+             {isLoading ? 'Processing...' : isListening ? 'Listening (Auto-Send)' : 'Ready'} | Res: <span className="text-sky-400">{imageSize}</span>
            </span>
         </div>
       </div>
