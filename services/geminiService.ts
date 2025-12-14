@@ -195,28 +195,34 @@ export const sendMessageToSession = async (
   if (groundingChunks && groundingChunks.length > 0) {
     const sources = groundingChunks
       .map((chunk: any) => {
+        const chunkSources: string[] = [];
+        
+        // 1. Web Sources
         if (chunk.web?.uri && chunk.web?.title) {
-          return `* [${chunk.web.title}](${chunk.web.uri})`;
+          chunkSources.push(`[${chunk.web.title}](${chunk.web.uri})`);
         }
+        
+        // 2. Map Sources (Direct)
         if (chunk.maps?.uri && chunk.maps?.title) {
-           return `* 📍 [${chunk.maps.title}](${chunk.maps.uri})`;
+           chunkSources.push(`📍 [${chunk.maps.title}](${chunk.maps.uri})`);
         }
-        if (chunk.maps?.placeAnswerSources && chunk.maps.placeAnswerSources.length > 0) {
-           return chunk.maps.placeAnswerSources.map((source: any) => {
+
+        // 3. Map Sources (Place Answers)
+        if (chunk.maps?.placeAnswerSources?.length) {
+           chunk.maps.placeAnswerSources.forEach((source: any) => {
              if (source.uri && source.title) {
-               return `* 📍 [${source.title}](${source.uri})`;
+               chunkSources.push(`📍 [${source.title}](${source.uri})`);
              }
-             return null;
-           }).filter(Boolean).join('\n');
+           });
         }
-        return null;
+        
+        return chunkSources;
       })
-      .filter(Boolean)
       .flat();
 
     const uniqueSources = [...new Set(sources)];
     if (uniqueSources.length > 0) {
-      responseText += `\n\n### INTEL SOURCES\n${uniqueSources.join('\n')}`;
+      responseText += `\n\n### INTEL SOURCES\n${uniqueSources.map(s => `* ${s}`).join('\n')}`;
     }
   }
 
