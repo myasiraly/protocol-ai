@@ -17,37 +17,36 @@
             },
             colors: {
               protocol: {
-                bg: '#020617', // Slate 950
-                surface: '#0f172a', // Slate 900
-                glass: 'rgba(15, 23, 42, 0.6)',
-                border: '#1e293b', // Slate 800
-                accent: '#f1f5f9', // Slate 100
-                muted: '#64748b', // Slate 500
-                highlight: '#38bdf8', // Sky 400
+                bg: '#050505', // Deep Obsidian
+                surface: '#0A0A0A', // Void
+                card: '#111111', 
+                border: '#222222',
+                accent: '#E2E2E2',
+                muted: '#888888',
+                highlight: '#FFFFFF',
+                primary: '#3b82f6', // Standard Blue for accents
               }
             },
             backgroundImage: {
-              'dot-pattern': 'radial-gradient(circle, #1e293b 1px, transparent 1px)',
-              'glass-gradient': 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 100%)',
+              'noise': "url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22 opacity=%220.05%22/%3E%3C/svg%3E')",
+              'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
             },
             boxShadow: {
               'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.5)',
-              'glass-inset': 'inset 0 0 0 1px rgba(255, 255, 255, 0.05)',
-              'glow': '0 0 20px rgba(56, 189, 248, 0.15)',
-              'pop': '0 10px 40px -10px rgba(0,0,0,0.5)',
+              'glow': '0 0 20px rgba(59, 130, 246, 0.15)',
             },
             animation: {
-              'fade-in': 'fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-              'slide-up': 'slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+              'slide-up': 'slideUp 0.5s ease-out forwards',
               'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
             },
             keyframes: {
               fadeIn: {
-                '0%': { opacity: '0', filter: 'blur(4px)' },
-                '100%': { opacity: '1', filter: 'blur(0)' },
+                '0%': { opacity: '0', transform: 'scale(0.98)' },
+                '100%': { opacity: '1', transform: 'scale(1)' },
               },
               slideUp: {
-                '0%': { opacity: '0', transform: 'translateY(20px)' },
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
                 '100%': { opacity: '1', transform: 'translateY(0)' },
               }
             }
@@ -57,38 +56,31 @@
     </script>
     <style>
       body {
-        background-color: #020617;
-        color: #f1f5f9;
+        background-color: #050505;
+        color: #e2e2e2;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
       /* Custom scrollbar */
       ::-webkit-scrollbar {
-        width: 6px;
+        width: 4px;
       }
       ::-webkit-scrollbar-track {
         background: transparent; 
       }
       ::-webkit-scrollbar-thumb {
-        background: #334155;
-        border-radius: 3px;
+        background: #333;
+        border-radius: 2px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #475569; 
-      }
-      
-      .bg-grid-canvas {
-        background-image: radial-gradient(#334155 1px, transparent 1px);
-        background-size: 32px 32px;
-        mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
+        background: #555; 
       }
       
       .glass-panel {
-        background: rgba(15, 23, 42, 0.6);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        background: rgba(10, 10, 10, 0.7);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
     </style>
   <script type="importmap">

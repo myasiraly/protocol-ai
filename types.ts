@@ -21,6 +21,7 @@ export interface Message {
   isStreaming?: boolean;
   attachments?: Attachment[];
   generatedMedia?: Attachment[];
+  audioData?: string; // Base64 audio from native model generation
 }
 
 export interface UserProfile {

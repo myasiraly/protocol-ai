@@ -1,7 +1,8 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Message, MessageRole, Attachment } from '../types';
-import { User, Cpu, Square, Loader2, Play, ExternalLink, Video, FileText, Copy, Check } from 'lucide-react';
-import { generateSpeech, playAudioData } from '../services/geminiService';
+import { User, Cpu, Square, Play, ExternalLink, Video, Copy, Check, Volume2, Sparkles } from 'lucide-react';
+import { playAudioData } from '../services/geminiService';
 import { playSound } from '../utils/audio';
 
 interface MessageCardProps {
@@ -11,61 +12,44 @@ interface MessageCardProps {
 export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
   const isProtocol = message.role === MessageRole.PROTOCOL;
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
-    // Trigger sound on mount for new messages
     if (Date.now() - message.timestamp < 1000) {
       playSound(isProtocol ? 'message' : 'click');
     }
-
+    if (message.audioData && Date.now() - message.timestamp < 2000) {
+       handlePlayNativeAudio();
+    }
     return () => {
-      if (sourceRef.current) {
-        sourceRef.current.stop();
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-      }
+      if (sourceRef.current) sourceRef.current.stop();
+      if (audioContextRef.current) audioContextRef.current.close();
     };
   }, []);
 
-  const handleToggleAudio = async () => {
+  const handlePlayNativeAudio = async () => {
+    if (!message.audioData) return;
     if (isPlaying) {
-      if (sourceRef.current) {
-        sourceRef.current.stop();
-        sourceRef.current = null;
-      }
+      sourceRef.current?.stop();
       setIsPlaying(false);
       return;
     }
-
-    playSound('click');
-    setIsLoadingAudio(true);
     try {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
+      if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
 
-      const base64Audio = await generateSpeech(message.content);
-      const source = await playAudioData(base64Audio, audioContextRef.current);
-      
-      sourceRef.current = source;
       setIsPlaying(true);
-
-      source.onended = () => {
-        setIsPlaying(false);
-        sourceRef.current = null;
-      };
-
+      const source = await playAudioData(message.audioData, audioContextRef.current);
+      sourceRef.current = source;
+      source.onended = () => setIsPlaying(false);
     } catch (error) {
-      console.error("Failed to play audio:", error);
-      playSound('error');
-    } finally {
-      setIsLoadingAudio(false);
+      console.error("Audio Playback Error:", error);
+      setIsPlaying(false);
     }
   };
 
@@ -74,13 +58,9 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
       setIsCopied(true);
       playSound('click');
       setTimeout(() => setIsCopied(false), 2000);
-    }).catch(err => {
-      console.error('Failed to copy text: ', err);
-      playSound('error');
     });
   };
 
-  // Helper to parse bold text **bold**
   const parseBold = (text: string) => {
     const parts: React.ReactNode[] = [];
     const boldRegex = /\*\*([^\*]+)\*\*/g;
@@ -88,23 +68,14 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
     let match;
 
     while ((match = boldRegex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.substring(lastIndex, match.index));
-      }
-      parts.push(
-        <strong key={`bold-${match.index}`} className="font-bold text-sky-100">
-          {match[1]}
-        </strong>
-      );
+      if (match.index > lastIndex) parts.push(text.substring(lastIndex, match.index));
+      parts.push(<strong key={match.index} className="font-semibold text-white">{match[1]}</strong>);
       lastIndex = boldRegex.lastIndex;
     }
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
+    if (lastIndex < text.length) parts.push(text.substring(lastIndex));
     return parts.length > 0 ? parts : [text];
   };
 
-  // Helper to parse formatting: links [Title](url) and bold **text**
   const formatText = (text: string) => {
     const parts: React.ReactNode[] = [];
     const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
@@ -112,48 +83,35 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
     let match;
 
     while ((match = linkRegex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(...parseBold(text.substring(lastIndex, match.index)));
-      }
+      if (match.index > lastIndex) parts.push(...parseBold(text.substring(lastIndex, match.index)));
       parts.push(
-        <a 
-          key={`link-${match.index}`} 
-          href={match[2]} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-sky-400 hover:text-sky-300 underline decoration-sky-500/30 hover:decoration-sky-400 transition-all inline-flex items-center gap-1"
-        >
-          {match[1]}
-          <ExternalLink size={10} />
+        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline decoration-blue-500/30 inline-flex items-center gap-1">
+          {match[1]}<ExternalLink size={10} />
         </a>
       );
       lastIndex = linkRegex.lastIndex;
     }
-    if (lastIndex < text.length) {
-      parts.push(...parseBold(text.substring(lastIndex)));
-    }
+    if (lastIndex < text.length) parts.push(...parseBold(text.substring(lastIndex)));
     return parts.length > 0 ? parts : parseBold(text);
   };
 
-  // Render Generated Media (Images/Videos) for Protocol
   const renderGeneratedMedia = (media: Attachment[]) => {
     if (!media || media.length === 0) return null;
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+      <div className="grid grid-cols-1 gap-3 mt-4">
         {media.map((item, idx) => (
-          <div key={idx} className={`rounded-xl overflow-hidden border border-white/10 shadow-2xl bg-black/50 relative group ${item.type === 'video' ? 'md:col-span-2' : ''}`}>
+          <div key={idx} className="rounded-2xl overflow-hidden border border-white/10 bg-black/50 relative shadow-lg">
             {item.type === 'image' && item.data && (
-               <img src={`data:${item.mimeType};base64,${item.data}`} alt="DeepAgent Generation" className="w-full h-auto object-cover hover:scale-105 transition-transform duration-700" />
+               <img src={`data:${item.mimeType};base64,${item.data}`} alt="Gen" className="w-full h-auto object-cover" />
             )}
             {item.type === 'video' && item.uri && (
                <div className="relative w-full aspect-video">
                  <video controls className="w-full h-full object-cover">
                    <source src={item.uri} type="video/mp4" />
-                   Your browser does not support the video tag.
                  </video>
-                 <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-2 text-xs font-mono text-white/80 border border-white/10 pointer-events-none">
-                   <Video size={12} className="text-emerald-400" />
-                   <span>Veo 3.1</span>
+                 <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full flex items-center gap-1.5 text-[10px] font-mono text-white/90 pointer-events-none border border-white/10">
+                   <Video size={10} className="text-emerald-400" />
+                   <span>VEO GENERATION</span>
                  </div>
                </div>
             )}
@@ -163,183 +121,121 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message }) => {
     );
   };
 
-  // Render User Attachments
   const renderUserAttachments = (attachments: Attachment[]) => {
      if (!attachments || attachments.length === 0) return null;
      return (
-       <div className="flex flex-wrap gap-2 mb-3 justify-end">
+       <div className="flex flex-wrap gap-2 mb-2 justify-end">
          {attachments.map((att, idx) => (
-           <div key={idx} className="h-16 w-16 rounded-lg overflow-hidden border border-white/10 relative">
-              <img src={`data:${att.mimeType};base64,${att.data}`} alt="Attachment" className="w-full h-full object-cover" />
+           <div key={idx} className="h-16 w-16 md:h-20 md:w-20 rounded-xl overflow-hidden border border-white/10 shadow-sm flex items-center justify-center bg-black/50">
+              {att.type === 'image' && att.data && (
+                  <img src={`data:${att.mimeType};base64,${att.data}`} alt="Att" className="w-full h-full object-cover" />
+              )}
+              {att.type === 'video' && att.data && (
+                  <video src={`data:${att.mimeType};base64,${att.data}`} className="w-full h-full object-cover" />
+              )}
            </div>
          ))}
        </div>
      );
   };
 
-  // Smart Content Renderer
   const renderContent = (text: string) => {
+    if (message.audioData) {
+        return (
+            <div className="flex items-center gap-4 py-2 px-1 animate-fade-in">
+                <button onClick={handlePlayNativeAudio} className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg ${isPlaying ? 'bg-white text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}>
+                   {isPlaying ? <Square size={16} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-0.5" />}
+                </button>
+                <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-mono font-bold text-blue-400 tracking-wider uppercase flex items-center gap-1.5">
+                        <Volume2 size={12} /> Encrypted Audio
+                    </span>
+                    <div className="h-1 w-32 bg-white/10 rounded-full overflow-hidden">
+                       <div className={`h-full bg-blue-500 rounded-full transition-all duration-300 ${isPlaying ? 'animate-pulse w-full' : 'w-0'}`}></div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (!isProtocol) {
       return (
-        <div className="font-sans text-[15px] leading-relaxed text-slate-200 whitespace-pre-wrap">
-           {formatText(text)}
+        <div className="font-sans text-[15px] leading-relaxed text-white whitespace-pre-wrap">
+          {formatText(text)}
         </div>
       );
     }
 
     return (
-      <div className="space-y-1">
+      <div className="space-y-2">
         {text.split('\n').map((line, idx) => {
           const trimmed = line.trim();
-
-          // Headers (### ROLE)
           if (trimmed.startsWith('###')) {
             return (
-              <div key={idx} className="mt-8 mb-4 flex items-center gap-3 opacity-90">
-                 <div className="h-[1px] w-4 bg-sky-500/50"></div>
-                 <h3 className="text-[11px] font-bold text-sky-400 uppercase tracking-[0.2em] font-mono">
-                    {line.replace(/^###\s*/, '')}
-                 </h3>
-                 <div className="h-[1px] flex-grow bg-gradient-to-r from-sky-500/50 to-transparent"></div>
+              <div key={idx} className="mt-6 mb-3 flex items-center gap-3">
+                 <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">{line.replace(/^###\s*/, '')}</h3>
+                 <div className="h-[1px] flex-grow bg-white/10"></div>
               </div>
             );
           }
-          
-          // Directives ([STATUS]: Completed)
           if (trimmed.match(/^\[.*?\]:/)) {
+             // System Status Messages
             const [tag, ...rest] = line.split(':');
             return (
-              <div key={idx} className="flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-3 mb-3 font-mono text-xs animate-fade-in pl-1" style={{animationDelay: `${idx * 20}ms`}}>
-                <span className="text-sky-300 font-bold tracking-tight inline-block bg-sky-950/40 px-2 py-1 rounded border border-sky-500/20 shadow-[0_0_10px_-4px_rgba(56,189,248,0.4)] whitespace-nowrap">
-                  {tag}
-                </span>
-                <span className="text-slate-300 font-medium tracking-wide leading-relaxed">{formatText(rest.join(':'))}</span>
+              <div key={idx} className="flex gap-2 items-start py-1 text-xs font-mono animate-fade-in text-protocol-muted">
+                <span className="text-blue-400 whitespace-nowrap">{tag}</span>
+                <span className="opacity-80">{formatText(rest.join(':'))}</span>
               </div>
             );
           }
-
-          // Bullet Points (* Item)
           if (trimmed.startsWith('* ')) {
-            const content = line.replace(/^\*\s*/, '');
             return (
-              <div key={idx} className="flex items-start gap-4 mb-2 pl-2 group">
-                <div className="w-1 h-1 rounded-full bg-slate-500 mt-2.5 shrink-0 group-hover:bg-sky-400 group-hover:shadow-[0_0_8px_rgba(56,189,248,0.8)] transition-all" />
-                <span className="text-slate-300 leading-relaxed text-[15px] font-sans font-light tracking-wide">
-                  {formatText(content)}
-                </span>
+              <div key={idx} className="flex items-start gap-3 mb-1 pl-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500/50 mt-2 shrink-0" />
+                <span className="text-gray-300 text-[15px] leading-relaxed">{formatText(line.replace(/^\*\s*/, ''))}</span>
               </div>
             );
           }
-
-          // Numbered Lists (1. Option)
-          if (trimmed.match(/^\d+\./)) {
-            const number = trimmed.match(/^\d+\./)?.[0];
-            const content = line.replace(/^\d+\.\s*/, '');
-            return (
-              <div key={idx} className="flex items-start gap-4 mb-3 pl-1 group p-3 rounded-lg hover:bg-white/[0.02] transition-colors border border-transparent hover:border-white/5">
-                 <span className="font-mono text-sky-500/80 text-xs mt-0.5 font-bold">{number}</span>
-                 <span className="text-slate-200 leading-relaxed text-[15px] font-sans font-light tracking-wide">
-                   {formatText(content)}
-                 </span>
-              </div>
-            );
-          }
-
-          // Empty Lines
           if (trimmed === '') return <div key={idx} className="h-2" />;
-          
-          // Standard Text
-          return <p key={idx} className="mb-2 text-slate-300 leading-relaxed text-[15px] font-sans font-light tracking-wide pl-1">
-            {formatText(line)}
-          </p>;
+          return <p key={idx} className="mb-2 text-gray-300 text-[15px] leading-relaxed">{formatText(line)}</p>;
         })}
-        
-        {/* Render any generated media at the bottom of the message */}
         {message.generatedMedia && renderGeneratedMedia(message.generatedMedia)}
       </div>
     );
   };
 
   return (
-    <div className={`w-full flex ${isProtocol ? 'justify-start' : 'justify-end'} mb-8 animate-slide-up group px-2 md:px-0`}>
-      <div className={`flex flex-col relative max-w-[95%] md:max-w-[85%] lg:max-w-[75%] ${isProtocol ? 'items-start' : 'items-end'}`}>
+    <div className={`w-full flex ${isProtocol ? 'justify-start' : 'justify-end'} mb-6 md:mb-8 animate-slide-up px-2 group`}>
+      <div className={`flex gap-4 max-w-[95%] md:max-w-[85%] lg:max-w-[75%] ${isProtocol ? 'flex-row' : 'flex-row-reverse'}`}>
         
-        {/* Header Label - Visible on Hover or always for Protocol */}
-        <div className={`flex items-center gap-3 mb-2 transition-all duration-300 ${isProtocol ? 'translate-x-1' : 'flex-row-reverse translate-x--1'}`}>
-          <div className={`
-             flex items-center gap-2 px-3 py-1 rounded-full border text-[10px] font-mono tracking-widest font-bold uppercase shadow-sm backdrop-blur-md
-             ${isProtocol 
-               ? 'bg-[#0b1221] border-sky-500/20 text-sky-400' 
-               : 'bg-slate-800 border-slate-600/50 text-slate-300'}
-          `}>
-             {isProtocol ? <Cpu size={12} /> : <User size={12} />}
-             <span>{isProtocol ? 'PROTOCOL' : 'USER'}</span>
+        {/* Avatar Area */}
+        <div className="shrink-0 flex flex-col gap-2 mt-1">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center border shadow-lg ${isProtocol ? 'bg-gradient-to-br from-gray-900 to-black border-white/10 text-blue-400' : 'bg-white text-black border-transparent'}`}>
+             {isProtocol ? <Sparkles size={14} /> : <User size={14} />}
           </div>
-          
-          <span className="text-[10px] font-mono text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">
-            {new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-          </span>
-
-          {isProtocol && (
-             <>
-               <button 
-                  onClick={handleToggleAudio}
-                  disabled={isLoadingAudio}
-                  className={`
-                    flex items-center gap-1.5 px-2 py-0.5 rounded-full border bg-white/[0.02] backdrop-blur-sm transition-all hover:bg-white/[0.05] opacity-0 group-hover:opacity-100
-                    ${isPlaying ? 'text-sky-400 border-sky-500/30' : 'text-slate-500 border-white/5 hover:text-slate-300'}
-                  `}
-                >
-                  {isLoadingAudio ? <Loader2 size={10} className="animate-spin" /> : isPlaying ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
-                  <span className="text-[9px] uppercase tracking-wider font-bold font-mono hidden sm:inline">
-                     {isPlaying ? 'Stop' : 'Read Aloud'}
-                  </span>
-                </button>
-
-                <button
-                  onClick={handleCopy}
-                  className={`
-                    flex items-center gap-1.5 px-2 py-0.5 rounded-full border bg-white/[0.02] backdrop-blur-sm transition-all hover:bg-white/[0.05] opacity-0 group-hover:opacity-100
-                    ${isCopied ? 'text-emerald-400 border-emerald-500/30' : 'text-slate-500 border-white/5 hover:text-slate-300'}
-                  `}
-                >
-                  {isCopied ? <Check size={10} /> : <Copy size={10} />}
-                  <span className="text-[9px] uppercase tracking-wider font-bold font-mono hidden sm:inline">
-                     {isCopied ? 'Copied' : 'Copy'}
-                  </span>
-                </button>
-             </>
-          )}
         </div>
 
-        {/* Message Container */}
-        <div className={`
-          relative overflow-hidden transition-all duration-300
-          ${isProtocol 
-            ? 'bg-[#020617]/80 backdrop-blur-xl border border-white/10 rounded-2xl rounded-tl-sm shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-6 md:p-8 w-full' 
-            : 'bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/50 rounded-2xl rounded-tr-sm shadow-xl p-5 min-w-[120px]'}
-        `}>
-          
-          {/* Protocol Specific Visual Decorations */}
-          {isProtocol && (
-             <>
-               <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-sky-500/20 to-transparent"></div>
-               <div className="absolute top-0 left-0 w-[2px] h-full bg-gradient-to-b from-sky-500/20 via-transparent to-transparent"></div>
-               <div className="absolute -top-32 -right-32 w-64 h-64 bg-sky-500/5 blur-[80px] pointer-events-none rounded-full"></div>
-             </>
-          )}
-
-          {/* User Specific Visual Decorations */}
-          {!isProtocol && (
-             <div className="absolute inset-0 bg-white/[0.02] pointer-events-none"></div>
-          )}
-          
-          {/* Content */}
-          <div className="relative z-10">
-             {!isProtocol && renderUserAttachments(message.attachments || [])}
-             {renderContent(message.content)}
+        {/* Content Area */}
+        <div className={`flex flex-col ${isProtocol ? 'items-start' : 'items-end'}`}>
+          <div className="flex items-center gap-2 mb-1 opacity-60 px-1">
+             <span className="text-[10px] font-mono uppercase tracking-wider">{isProtocol ? 'Protocol' : 'You'}</span>
+             {isProtocol && !message.audioData && (
+                <button onClick={handleCopy} className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-white">
+                  {isCopied ? <Check size={10} /> : <Copy size={10} />}
+                </button>
+             )}
           </div>
 
+          <div className={`relative px-5 py-3.5 md:px-6 md:py-4 shadow-sm ${
+            isProtocol 
+              ? 'bg-transparent' // Protocol text blends with background, no bubble necessary for cleaner look, or minimal
+              : 'bg-[#1a1a1a] border border-white/10 rounded-2xl rounded-tr-sm text-white'
+          }`}>
+             {!isProtocol && renderUserAttachments(message.attachments || [])}
+             <div className={`${isProtocol ? 'text-gray-300' : 'text-white'}`}>
+                {renderContent(message.content)}
+             </div>
+          </div>
         </div>
 
       </div>
