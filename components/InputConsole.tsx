@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Paperclip, X, Zap, Video, Ghost, FileText, Mail, HardDrive, Calendar, Music, FileCode, FileJson, Plus } from 'lucide-react';
+import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Paperclip, X, Zap, Video, Ghost, FileText, Mail, HardDrive, Calendar, Music, FileCode, FileJson, Plus, Settings2 } from 'lucide-react';
 import { playSound } from '../utils/audio';
 import { Attachment } from '../types';
 
@@ -19,6 +19,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   const [isDeepAgent, setIsDeepAgent] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showMentions, setShowMentions] = useState(false);
+  const [showExtraTools, setShowExtraTools] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -31,17 +32,17 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     latestInputRef.current = input;
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px';
+      // Adjust height dynamically, maxing out at a reasonable mobile height
+      const maxHeight = window.innerWidth < 768 ? 120 : 200;
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, maxHeight) + 'px';
     }
     
-    // Check for @ mention trigger
     const lastWord = input.split(' ').pop();
     if (lastWord && lastWord.startsWith('@')) {
        setShowMentions(true);
     } else {
        setShowMentions(false);
     }
-
   }, [input]);
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -56,6 +57,8 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     setInput('');
     setAttachments([]);
     setShowMentions(false);
+    setShowExtraTools(false);
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
   };
 
   const handleAutoSend = () => {
@@ -80,14 +83,9 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      if (showMentions) {
-         e.preventDefault();
-         handleSubmit();
-      } else {
-         e.preventDefault();
-         handleSubmit();
-      }
+    if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 768) {
+       e.preventDefault();
+       handleSubmit();
     }
   };
 
@@ -97,7 +95,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
 
   const handleMentionSelect = (mention: string) => {
      const words = input.split(' ');
-     words.pop(); // remove the partial @...
+     words.pop(); 
      const newInput = words.join(' ') + (words.length > 0 ? ' ' : '') + mention + ' ';
      setInput(newInput);
      setShowMentions(false);
@@ -158,21 +156,9 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     const isVideo = file.type.startsWith('video/');
     const isAudio = file.type.startsWith('audio/');
     const isPDF = file.type === 'application/pdf';
-    
-    // Expanded text/code detection
     const isText = file.type.startsWith('text/') || 
                    file.type === 'application/json' ||
-                   file.name.endsWith('.json') ||
-                   file.name.endsWith('.js') ||
-                   file.name.endsWith('.ts') ||
-                   file.name.endsWith('.jsx') ||
-                   file.name.endsWith('.tsx') ||
-                   file.name.endsWith('.py') ||
-                   file.name.endsWith('.md') ||
-                   file.name.endsWith('.csv') ||
-                   file.name.endsWith('.xml') ||
-                   file.name.endsWith('.html') ||
-                   file.name.endsWith('.css');
+                   ['.json', '.js', '.ts', '.jsx', '.tsx', '.py', '.md', '.csv', '.xml', '.html', '.css'].some(ext => file.name.endsWith(ext));
 
     if (isImage || isVideo || isAudio || isPDF || isText) {
       const reader = new FileReader();
@@ -181,14 +167,10 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
         if (result) {
           let type: 'image' | 'video' | 'audio' | 'file' = 'file';
           let mimeType = file.type;
-
           if (isImage) type = 'image';
           if (isVideo) type = 'video';
           if (isAudio) type = 'audio';
-          
-          if ((!mimeType || mimeType === 'application/octet-stream') && isText) {
-             mimeType = 'text/plain';
-          }
+          if ((!mimeType || mimeType === 'application/octet-stream') && isText) mimeType = 'text/plain';
 
           setAttachments(prev => [...prev, { 
               type, 
@@ -201,7 +183,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
       };
       reader.readAsDataURL(file);
     } else {
-        alert("Unsupported file format. Please use Images, Video, Audio, PDF, or Text/Code files.");
+        alert("Unsupported file format.");
     }
   };
 
@@ -213,9 +195,8 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-            const file = item.getAsFile();
+        if (items[i].kind === 'file') {
+            const file = items[i].getAsFile();
             if (file) processFile(file);
         }
     }
@@ -234,160 +215,123 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
 
   return (
     <div className={`
-      fixed bottom-0 right-0 z-50 flex justify-center items-end transition-all duration-300 pointer-events-none pb-4 px-4
+      fixed bottom-0 right-0 z-50 flex justify-center items-end transition-all duration-300 pointer-events-none pb-4 md:pb-6 px-3 md:px-6
       ${isSidebarOpen ? 'left-0 md:left-72' : 'left-0'}
     `}>
-      {/* Background Gradient to mask scrolling text at the very bottom */}
-      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-protocol-obsidian via-protocol-obsidian/80 to-transparent z-[-1] pointer-events-none"></div>
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-protocol-obsidian via-protocol-obsidian/90 to-transparent z-[-1] pointer-events-none"></div>
 
-      <div className="w-full max-w-4xl relative pointer-events-auto">
+      <div className="w-full max-w-4xl relative pointer-events-auto flex flex-col">
         
-        {/* Status Indicators (Above Input) */}
-        <div className="flex gap-2 mb-2 ml-2">
-            {isIncognito && (
-                <div className="px-3 py-1 bg-violet-500/10 backdrop-blur-md border border-violet-500/20 text-[9px] text-violet-400 font-mono tracking-widest uppercase flex items-center gap-2 rounded-full shadow-lg">
-                <Ghost size={10} className="fill-current" />
-                Incognito
-                </div>
-            )}
-            {isDeepAgent && (
-                <div className="px-3 py-1 bg-emerald-500/10 backdrop-blur-md border border-emerald-500/20 text-[9px] text-emerald-400 font-mono tracking-widest uppercase flex items-center gap-2 rounded-full shadow-lg">
-                <Zap size={10} className="fill-current" />
-                DeepAgent
+        {/* Indicators & Attachments Row - Mobile Friendly */}
+        <div className="flex flex-col gap-2 mb-2 w-full">
+            <div className="flex flex-wrap gap-2 px-1">
+                {isIncognito && (
+                    <div className="px-2.5 py-1 bg-violet-500/10 backdrop-blur-md border border-violet-500/20 text-[8px] md:text-[9px] text-violet-400 font-mono tracking-widest uppercase flex items-center gap-1.5 rounded-full shadow-lg">
+                        <Ghost size={10} className="fill-current" />
+                        <span className="hidden xs:inline">Incognito</span>
+                    </div>
+                )}
+                {isDeepAgent && (
+                    <div className="px-2.5 py-1 bg-emerald-500/10 backdrop-blur-md border border-emerald-500/20 text-[8px] md:text-[9px] text-emerald-400 font-mono tracking-widest uppercase flex items-center gap-1.5 rounded-full shadow-lg">
+                        <Zap size={10} className="fill-current" />
+                        <span className="hidden xs:inline">DeepAgent</span>
+                    </div>
+                )}
+            </div>
+
+            {attachments.length > 0 && (
+                <div className="px-1 flex gap-2 overflow-x-auto custom-scrollbar no-scrollbar py-1">
+                    {attachments.map((att, idx) => (
+                    <div key={idx} className="relative group shrink-0">
+                        <div className="h-12 w-12 md:h-14 md:w-14 border border-protocol-border bg-protocol-input flex items-center justify-center relative rounded-xl overflow-hidden shadow-lg">
+                            {att.type === 'video' ? <Video size={16} /> : att.type === 'audio' ? <Music size={16} /> : att.type === 'file' ? getFileIcon(att) : <img src={`data:${att.mimeType};base64,${att.data}`} alt="" className="h-full w-full object-cover" />}
+                        </div>
+                        <button onClick={() => removeAttachment(idx)} className="absolute -top-1.5 -right-1.5 bg-protocol-charcoal border border-protocol-border text-protocol-platinum p-1 hover:text-red-400 transition-colors rounded-full shadow-md">
+                            <X size={10} />
+                        </button>
+                    </div>
+                    ))}
                 </div>
             )}
         </div>
 
         {/* Mentions Popover */}
         {showMentions && (
-            <div className="absolute bottom-full left-12 mb-4 bg-protocol-charcoal border border-protocol-border p-2 w-48 shadow-2xl z-30 flex flex-col gap-1 rounded-xl overflow-hidden">
+            <div className="absolute bottom-full left-4 mb-4 bg-protocol-charcoal border border-protocol-border p-2 w-48 shadow-2xl z-30 flex flex-col gap-1 rounded-2xl overflow-hidden animate-slide-up">
                 <div className="px-4 py-2 text-[9px] text-protocol-muted font-mono uppercase tracking-wider">Ecosystem</div>
-                <button onClick={() => handleMentionSelect('@Gmail')} className="flex items-center gap-3 px-4 py-2 hover:bg-protocol-border text-xs text-protocol-platinum transition-colors rounded-lg">
-                    <Mail size={14} className="text-protocol-swissRed" />
-                    <span>Gmail</span>
-                </button>
-                <button onClick={() => handleMentionSelect('@Drive')} className="flex items-center gap-3 px-4 py-2 hover:bg-protocol-border text-xs text-protocol-platinum transition-colors rounded-lg">
-                    <HardDrive size={14} className="text-blue-400" />
-                    <span>Drive</span>
-                </button>
-                <button onClick={() => handleMentionSelect('@Calendar')} className="flex items-center gap-3 px-4 py-2 hover:bg-protocol-border text-xs text-protocol-platinum transition-colors rounded-lg">
-                    <Calendar size={14} className="text-emerald-400" />
-                    <span>Calendar</span>
-                </button>
+                <button onClick={() => handleMentionSelect('@Gmail')} className="flex items-center gap-3 px-4 py-2.5 hover:bg-protocol-border text-xs text-protocol-platinum transition-colors rounded-xl"><Mail size={14} className="text-protocol-swissRed" /><span>Gmail</span></button>
+                <button onClick={() => handleMentionSelect('@Drive')} className="flex items-center gap-3 px-4 py-2.5 hover:bg-protocol-border text-xs text-protocol-platinum transition-colors rounded-xl"><HardDrive size={14} className="text-blue-400" /><span>Drive</span></button>
+                <button onClick={() => handleMentionSelect('@Calendar')} className="flex items-center gap-3 px-4 py-2.5 hover:bg-protocol-border text-xs text-protocol-platinum transition-colors rounded-xl"><Calendar size={14} className="text-emerald-400" /><span>Calendar</span></button>
             </div>
         )}
         
-        {/* Attachments Rail */}
-        {attachments.length > 0 && (
-        <div className="px-6 py-2 flex gap-3 overflow-x-auto custom-scrollbar mb-2">
-            {attachments.map((att, idx) => (
-            <div key={idx} className="relative group shrink-0">
-                <div className="h-14 w-14 border border-protocol-border bg-protocol-input flex items-center justify-center relative rounded-xl overflow-hidden shadow-lg">
-                {att.type === 'video' ? (
-                    <Video size={18} className="text-protocol-platinum/70" />
-                ) : att.type === 'audio' ? (
-                    <Music size={18} className="text-protocol-platinum/70" />
-                ) : att.type === 'file' ? (
-                    <div className="flex flex-col items-center justify-center p-1">
-                        {getFileIcon(att)}
-                        <span className="text-[7px] text-protocol-muted truncate w-10 text-center mt-0.5">{att.name?.slice(-8)}</span>
+        {/* Main Input Bar */}
+        <div className="bg-protocol-charcoal/90 backdrop-blur-2xl border border-protocol-border rounded-[1.75rem] shadow-heavy overflow-hidden ring-1 ring-white/5">
+            <div className="flex flex-col">
+                {/* Secondary Tools Expansion (Mobile Only) */}
+                {showExtraTools && (
+                    <div className="flex items-center justify-around p-3 border-b border-protocol-border bg-protocol-obsidian/30 animate-fade-in md:hidden">
+                        <button onClick={() => { onToggleIncognito(); playSound('click'); }} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${isIncognito ? 'text-violet-400' : 'text-protocol-muted'}`}><Ghost size={18} /><span className="text-[8px] font-mono tracking-tighter">SECURE</span></button>
+                        <button onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${isDeepAgent ? 'text-emerald-400' : 'text-protocol-muted'}`}><BrainCircuit size={18} /><span className="text-[8px] font-mono tracking-tighter">THINK</span></button>
+                        <button onClick={() => { toggleListening(); playSound('click'); }} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${isListening ? 'text-red-500' : 'text-protocol-muted'}`}>{isListening ? <MicOff size={18} /> : <Mic size={18} />}<span className="text-[8px] font-mono tracking-tighter">VOICE</span></button>
+                        <button onClick={() => { onOpenIntegrations(); playSound('click'); }} className="p-2 rounded-xl flex flex-col items-center gap-1 text-protocol-muted"><Plus size={18} /><span className="text-[8px] font-mono tracking-tighter">TOOLS</span></button>
                     </div>
-                ) : (
-                    <img src={`data:${att.mimeType};base64,${att.data}`} alt="Preview" className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                 )}
-                </div>
-                <button onClick={() => removeAttachment(idx)} className="absolute -top-1 -right-1 bg-protocol-charcoal border border-protocol-border text-protocol-platinum p-0.5 hover:text-red-400 transition-colors rounded-full shadow-md">
-                <X size={8} />
-                </button>
+
+                <form onSubmit={handleSubmit} className="flex items-end gap-1 p-2 md:p-2.5">
+                    {/* Left Actions */}
+                    <div className="flex items-center mb-0.5">
+                        <button
+                            type="button"
+                            onClick={() => setShowExtraTools(!showExtraTools)}
+                            className={`w-9 h-9 md:hidden flex items-center justify-center transition-all rounded-full ${showExtraTools ? 'bg-protocol-platinum text-protocol-obsidian' : 'text-protocol-muted hover:text-protocol-platinum'}`}
+                        >
+                            <Settings2 size={18} />
+                        </button>
+                        
+                        <div className="hidden md:flex items-center">
+                            <button type="button" onClick={() => { onOpenIntegrations(); playSound('click'); }} className="w-9 h-9 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Plus size={18} /></button>
+                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-9 h-9 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Paperclip size={18} /></button>
+                        </div>
+                        
+                        {/* Mobile Clip button always visible if not expanded */}
+                        {!showExtraTools && (
+                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-9 h-9 md:hidden flex items-center justify-center text-protocol-muted hover:text-protocol-platinum rounded-full"><Paperclip size={18} /></button>
+                        )}
+                        
+                        <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*,video/*,audio/*,application/pdf,text/*,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.md,.xml" multiple />
+                    </div>
+                    
+                    <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={handleChange}
+                        onKeyDown={handleKeyDown}
+                        onPaste={handlePaste}
+                        placeholder={isIncognito ? "Secure message..." : "Enter directive..."}
+                        disabled={isLoading}
+                        rows={1}
+                        className="flex-1 bg-transparent text-protocol-platinum py-2 px-1.5 focus:outline-none placeholder-protocol-muted/60 font-sans text-[15px] leading-snug resize-none max-h-[120px] md:max-h-[200px] custom-scrollbar mb-0.5"
+                    />
+
+                    {/* Right Actions */}
+                    <div className="flex items-center gap-1 mb-0.5">
+                        <div className="hidden md:flex items-center gap-1">
+                            <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isIncognito ? 'text-violet-400 bg-violet-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Incognito"><Ghost size={18} /></button>
+                            <button type="button" onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isDeepAgent ? 'text-emerald-400 bg-emerald-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="DeepAgent"><BrainCircuit size={18} /></button>
+                            <button type="button" onClick={toggleListening} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isListening ? 'text-protocol-swissRed animate-pulse' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Voice Input">{isListening ? <MicOff size={18} /> : <Mic size={18} />}</button>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                            className={`h-9 w-9 md:w-auto md:px-4 flex items-center justify-center bg-protocol-platinum text-protocol-obsidian font-bold text-[10px] uppercase tracking-widest hover:bg-protocol-muted transition-all disabled:opacity-20 rounded-full shadow-lg shrink-0`}
+                        >
+                            {isLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={20} strokeWidth={2.5} />}
+                        </button>
+                    </div>
+                </form>
             </div>
-            ))}
-        </div>
-        )}
-
-        {/* The "Command Line" Input Form - Rounded & Floating - COMPACT */}
-        <div className="bg-protocol-charcoal/90 backdrop-blur-xl border border-protocol-border rounded-[1.5rem] shadow-heavy overflow-hidden transition-all duration-300">
-            <form onSubmit={handleSubmit} className="flex items-end gap-1 p-2">
-               
-               <div className="flex items-center gap-0.5 pl-1 h-10">
-                   <button
-                    type="button"
-                    onClick={() => { onOpenIntegrations(); playSound('click'); }}
-                    className="w-8 h-8 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 transition-all rounded-full"
-                    title="Connect Tools"
-                   >
-                     <Plus size={18} />
-                   </button>
-
-                   <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleFileSelect} 
-                      className="hidden" 
-                      accept="image/*,video/*,audio/*,application/pdf,text/*,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.md,.xml" 
-                      multiple 
-                   />
-                   <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isLoading}
-                    className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-protocol-border/10 ${attachments.length > 0 ? 'text-protocol-platinum' : 'text-protocol-muted hover:text-protocol-platinum'}`}
-                   >
-                    <Paperclip size={18} />
-                   </button>
-               </div>
-               
-               {/* Divider */}
-               <div className="w-[1px] h-5 bg-protocol-border self-center mx-1"></div>
-
-               <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={handleChange}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  placeholder={isIncognito ? "Secure Channel Active..." : isListening ? "Listening..." : "Enter directive..."}
-                  disabled={isLoading}
-                  rows={1}
-                  className="flex-1 bg-transparent text-protocol-platinum py-2.5 px-2 focus:outline-none placeholder-protocol-muted font-sans text-[14px] leading-relaxed resize-none max-h-[140px] custom-scrollbar"
-                />
-
-                <div className="flex items-center gap-1 pr-1 h-10">
-                   {/* Tools */}
-                   <button
-                    type="button"
-                    onClick={() => { onToggleIncognito(); playSound('click'); }}
-                    className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-protocol-border/10 ${isIncognito ? 'text-violet-400 bg-violet-500/10' : 'text-protocol-muted hover:text-protocol-platinum'}`}
-                    title="Toggle Incognito"
-                   >
-                    <Ghost size={18} />
-                   </button>
-
-                   <button
-                    type="button"
-                    onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }}
-                    className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-protocol-border/10 ${isDeepAgent ? 'text-emerald-400 bg-emerald-500/10' : 'text-protocol-muted hover:text-protocol-platinum'}`}
-                   >
-                    <BrainCircuit size={18} />
-                   </button>
-
-                   <button
-                     type="button"
-                     onClick={toggleListening}
-                     className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-protocol-border/10 ${isListening ? 'text-protocol-swissRed animate-pulse' : 'text-protocol-muted hover:text-protocol-platinum'}`}
-                   >
-                     {isListening ? <MicOff size={18} /> : <Mic size={18} />}
-                   </button>
-
-                   {/* Submit - Rounded Heavy Button - Smaller */}
-                   <button
-                    type="submit"
-                    disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                    className={`h-8 px-4 ml-1 bg-protocol-platinum text-protocol-obsidian font-bold text-[10px] uppercase tracking-widest hover:bg-protocol-muted transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-full shadow-lg hover:shadow-xl hover:scale-105 active:scale-95`}
-                   >
-                    {isLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={18} strokeWidth={2.5} />}
-                   </button>
-                </div>
-            </form>
         </div>
       </div>
     </div>

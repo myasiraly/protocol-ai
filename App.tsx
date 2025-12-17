@@ -14,7 +14,7 @@ import { sendMessageToSession, generateConversationTitle } from './services/gemi
 import { playSound } from './utils/audio';
 import { auth, db, updateConversationTitle, deleteAllUserConversations, saveUserTrainingConfig, getUserTrainingConfig } from './services/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 const DEFAULT_INTEGRATIONS: Integration[] = [
   { id: '1', name: 'Google Workspace', icon: 'mail', description: 'Gmail, Calendar, Drive access', isConnected: false },
@@ -83,24 +83,34 @@ const App: React.FC = () => {
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // STRICTLY ENFORCE EMAIL VERIFICATION
-      if (firebaseUser && firebaseUser.emailVerified) {
-        setUser({
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
-          email: firebaseUser.email || '',
-          picture: firebaseUser.photoURL || undefined
-        });
+      try {
+        // STRICTLY ENFORCE EMAIL VERIFICATION
+        if (firebaseUser && firebaseUser.emailVerified) {
+          setUser({
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            email: firebaseUser.email || '',
+            picture: firebaseUser.photoURL || undefined
+          });
 
-        // Load Training Config
-        const savedConfig = await getUserTrainingConfig(firebaseUser.uid);
-        if (savedConfig) {
-           setTrainingConfig(savedConfig);
+          // Load Training Config safely
+          try {
+             const savedConfig = await getUserTrainingConfig(firebaseUser.uid);
+             if (savedConfig) {
+                setTrainingConfig(savedConfig);
+             }
+          } catch (configError) {
+             console.warn("Training config load failed (non-critical):", configError);
+          }
+        } else {
+          setUser(null);
         }
-      } else {
+      } catch (err) {
+        console.error("Critical Auth Error:", err);
         setUser(null);
+      } finally {
+        setIsAuthLoading(false);
       }
-      setIsAuthLoading(false);
     });
 
     return () => unsubscribe();
@@ -452,7 +462,18 @@ const App: React.FC = () => {
     }
   }, [currentConversationId, messages, conversations, user, isIncognito, integrations, trainingConfig]);
 
-  if (isAuthLoading) return null; 
+  // Loading State - Use a real spinner instead of returning null (black screen)
+  if (isAuthLoading) {
+     return (
+        <div className="h-[100dvh] w-full bg-protocol-obsidian flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+               <div className="w-8 h-8 border-2 border-protocol-border border-t-protocol-platinum rounded-full animate-spin"></div>
+               <div className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest animate-pulse">Initializing Protocol...</div>
+            </div>
+        </div>
+     );
+  }
+
   if (!user) return <LoginScreen />;
 
   return (
