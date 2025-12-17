@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Moon, Sun, User, Shield, Bell, Sliders, Smartphone, Monitor, Volume2, CheckCircle2, ChevronRight, LogOut, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain } from 'lucide-react';
+import { X, User, Shield, Bell, Sliders, Monitor, Volume2, CheckCircle2, ChevronRight, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain } from 'lucide-react';
 import { UserProfile } from '../types';
 import { playSound } from '../utils/audio';
 
@@ -8,8 +8,6 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: UserProfile | null;
-  isDarkMode: boolean;
-  onToggleTheme: () => void;
   onOpenTraining?: () => void;
   textSize: '12px' | '14px' | '16px';
   onSetTextSize: (size: '12px' | '14px' | '16px') => void;
@@ -21,8 +19,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen, 
   onClose, 
   user, 
-  isDarkMode, 
-  onToggleTheme, 
   onOpenTraining, 
   textSize, 
   onSetTextSize 
@@ -146,7 +142,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                  <p className="text-[10px] text-protocol-muted">Customize the visual environment of the Protocol interface.</p>
               </div>
 
-              {/* Text Size - Moved up to replace Theme Toggles */}
+              {/* Text Size */}
               <div className="flex items-center justify-between p-3 border border-protocol-border rounded-lg">
                 <div className="flex items-center gap-3">
                     <Type size={16} className="text-protocol-platinum"/>

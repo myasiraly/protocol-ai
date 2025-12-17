@@ -492,8 +492,6 @@ const App: React.FC = () => {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         user={user}
-        isDarkMode={isDarkMode}
-        onToggleTheme={toggleTheme}
         onOpenTraining={() => setIsTrainingOpen(true)}
         textSize={textSize}
         onSetTextSize={setTextSize}

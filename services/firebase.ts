@@ -1,5 +1,5 @@
-
-import { initializeApp } from 'firebase/app';
+import { initializeApp as _initializeApp } from 'firebase/app';
+import * as firebaseApp from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, collection, getDocs, writeBatch, doc, updateDoc, getDoc, setDoc } from 'firebase/firestore';
 import { TrainingConfig } from '../types';
@@ -14,7 +14,8 @@ const firebaseConfig = {
   measurementId: "G-FJKH1X826X"
 };
 
-const app = initializeApp(firebaseConfig);
+// Use namespace import to avoid 'no exported member' errors in strict environments
+const app = firebaseApp.initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);

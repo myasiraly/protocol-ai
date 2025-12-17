@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, ArrowRight, Fingerprint, Lock, Mail, User, CheckCircle2, Send } from 'lucide-react';
 import { playSound } from '../utils/audio';
@@ -10,8 +9,7 @@ import {
   updateProfile, 
   sendEmailVerification,
   sendPasswordResetEmail,
-  signOut,
-  AuthError 
+  signOut
 } from 'firebase/auth';
 import { ProtocolLogo } from './ProtocolLogo';
 
@@ -44,7 +42,7 @@ export const LoginScreen: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  const getErrorMessage = (error: AuthError) => {
+  const getErrorMessage = (error: any) => {
     console.error("Auth Error:", error.code, error.message);
     switch (error.code) {
       case 'auth/invalid-credential':
