@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality, Content } from "@google/genai";
 import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, VIDEO_MODEL_NAME } from '../constants';
-import { Message, MessageRole, Attachment, ImageGenerationSize } from '../types';
+import { Message, MessageRole, Attachment, TrainingConfig } from '../types';
 
 const getGenAI = (): GoogleGenAI => {
   const apiKey = process.env.API_KEY;
@@ -9,6 +9,62 @@ const getGenAI = (): GoogleGenAI => {
     throw new Error("API Key not found in environment variables");
   }
   return new GoogleGenAI({ apiKey });
+};
+
+// --- Audio Helpers ---
+
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number = 24000,
+  numChannels: number = 1,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
+export const playAudioData = async (base64Data: string, audioContext: AudioContext): Promise<AudioBufferSourceNode> => {
+  const bytes = decode(base64Data);
+  const audioBuffer = await decodeAudioData(bytes, audioContext, 24000, 1);
+
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioContext.destination);
+  source.start();
+  return source;
+};
+
+export const generateConversationTitle = async (message: string): Promise<string> => {
+  const ai = getGenAI();
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: `Generate a very short, concise title (max 5 words) for a conversation that starts with this message: "${message}". Do not use quotes.`,
+    });
+    return response.text?.trim() || "New Protocol";
+  } catch (e) {
+    console.error("Title generation failed", e);
+    return "New Protocol";
+  }
 };
 
 // --- Helper: History Sanitization ---
@@ -24,7 +80,9 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
 
     if (msg.attachments && msg.attachments.length > 0 && role === 'user') {
       msg.attachments.forEach(att => {
-        if ((att.type === 'image' || att.type === 'video') && att.data) {
+        // Handle Images, Videos, Audio, and Files
+        // Gemini supports generic inlineData for all these types if mimeType is correct
+        if (att.data) {
           parts.push({
             inlineData: {
               mimeType: att.mimeType,
@@ -53,18 +111,30 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
 };
 
 // --- Media Generation Functions ---
-const generateImage = async (prompt: string, size: ImageGenerationSize): Promise<Attachment | null> => {
+const generateImage = async (prompt: string, referenceImage?: { data: string, mimeType: string }): Promise<Attachment | null> => {
   const ai = getGenAI();
   try {
+    const parts: any[] = [];
+    if (referenceImage) {
+      parts.push({
+        inlineData: {
+          mimeType: referenceImage.mimeType,
+          data: referenceImage.data
+        }
+      });
+    }
+    parts.push({ text: prompt });
+
+    const config: any = {
+      imageConfig: {
+        aspectRatio: "16:9",
+      }
+    };
+
     const response = await ai.models.generateContent({
       model: IMAGE_MODEL_NAME,
-      contents: { parts: [{ text: prompt }] },
-      config: {
-        imageConfig: {
-          aspectRatio: "16:9",
-          imageSize: size
-        }
-      }
+      contents: { parts },
+      config: config
     });
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -127,9 +197,10 @@ export const sendMessageToSession = async (
   history: Message[],
   newMessage: string,
   attachments: Attachment[] = [],
-  imageSize: ImageGenerationSize = '1K',
   outputModality: 'TEXT' | 'AUDIO' = 'TEXT',
-  useDeepAgent: boolean = false
+  useDeepAgent: boolean = false,
+  activeIntegrations: string[] = [], // New Param
+  trainingConfig?: TrainingConfig | null // New Param
 ): Promise<{ text: string, generatedMedia?: Attachment[], audioData?: string }> => {
 
   const ai = getGenAI();
@@ -145,7 +216,8 @@ export const sendMessageToSession = async (
   const currentParts: any[] = [];
   if (attachments.length > 0) {
     attachments.forEach(att => {
-      if ((att.type === 'image' || att.type === 'video') && att.data) {
+      // Pass all supported types as inlineData
+      if (att.data) {
         currentParts.push({
           inlineData: { mimeType: att.mimeType, data: att.data }
         });
@@ -164,17 +236,39 @@ export const sendMessageToSession = async (
   let generatedMedia: Attachment[] = [];
   let result: GenerateContentResponse | null = null;
   
+  // Construct Dynamic System Instruction
+  let finalInstruction = PROTOCOL_SYSTEM_INSTRUCTION;
+
+  if (trainingConfig && trainingConfig.isEnabled) {
+    finalInstruction += `\n\n### NEURAL CONDITIONING (USER TRAINING OVERRIDE)
+The user has manually trained this model instance with specific requirements. You MUST adhere to these overrides above all standard behaviors:
+
+**CUSTOM IDENTITY:**
+${trainingConfig.identity}
+
+**CORE OBJECTIVES:**
+${trainingConfig.objectives}
+
+**BEHAVIORAL CONSTRAINTS:**
+${trainingConfig.constraints}
+
+**RESPONSE TONE/STYLE:**
+${trainingConfig.tone}`;
+  }
+
+  if (activeIntegrations.length > 0) {
+    finalInstruction += `\n\n### ACTIVE INTEGRATIONS
+The following external tools are connected and authorized by the user: ${activeIntegrations.join(', ')}. You can confidently act as if you have access to these services when requested.`;
+  }
+
   // 1. PRIORITY: Attempt Native Audio Generation
-  // Only attempt audio if NO video is present (Flash 2.5 feature) and DeepAgent is off.
   if (outputModality === 'AUDIO' && !hasVideo) {
     try {
-      // We use the standard model (Flash) which supports audio out
       const audioResult = await ai.models.generateContent({
         model: MODEL_NAME, 
         contents: contents,
         config: {
-          systemInstruction: PROTOCOL_SYSTEM_INSTRUCTION,
-          // STRICTLY REQUEST AUDIO ONLY
+          systemInstruction: finalInstruction,
           responseModalities: ['AUDIO'], 
           speechConfig: {
             voiceConfig: {
@@ -184,9 +278,7 @@ export const sendMessageToSession = async (
         }
       });
 
-      // Extract inline audio data
       const inlineData = audioResult.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-      
       if (inlineData && inlineData.data) {
         audioData = inlineData.data;
         responseText = "[Encrypted Audio Transmission]";
@@ -199,14 +291,10 @@ export const sendMessageToSession = async (
   }
 
   // 2. Text Generation
-  // Run this if:
-  // a) Modality was TEXT initially
-  // b) Modality was AUDIO but failed (so audioData is missing)
-  // c) We are processing Video (forces text response usually)
   if (outputModality === 'TEXT' || (outputModality === 'AUDIO' && !audioData) || hasVideo) {
     try {
       const config: any = {
-        systemInstruction: PROTOCOL_SYSTEM_INSTRUCTION,
+        systemInstruction: finalInstruction,
         temperature: 0.2,
         tools: [{ googleSearch: {} }, { googleMaps: {} }],
       };
@@ -226,25 +314,46 @@ export const sendMessageToSession = async (
          responseText = "[STATUS]: Request processed but no text returned.";
       }
 
-    } catch (textError) {
+    } catch (textError: any) {
       console.error("Text Generation Failed:", textError);
-      throw textError;
+      let friendlyError = textError.message || "Unknown Connection Failure";
+      if (friendlyError.includes('429')) friendlyError = "[SYSTEM ALERT]: Rate Limit Exceeded.";
+      throw new Error(friendlyError);
     }
   }
 
-  // 4. Post-Processing: Media Tags & Grounding
+  // 3. Post-Processing: Media Tags & Grounding
   if (responseText && responseText !== "[Encrypted Audio Transmission]") {
     const imageTagRegex = /\[GENERATE_IMAGE:\s*(.*?)\]/;
+    const editImageTagRegex = /\[EDIT_IMAGE:\s*(.*?)\]/;
     const videoTagRegex = /\[GENERATE_VIDEO:\s*(.*?)\]/;
 
     const imageMatch = responseText.match(imageTagRegex);
+    const editImageMatch = responseText.match(editImageTagRegex);
     const videoMatch = responseText.match(videoTagRegex);
 
     if (imageMatch) {
       const prompt = imageMatch[1];
-      responseText = responseText.replace(imageTagRegex, `\n[STATUS]: Generating ${imageSize} High-Fidelity Image...\n`);
-      const image = await generateImage(prompt, imageSize);
+      responseText = responseText.replace(imageTagRegex, `\n[STATUS]: Generating High-Fidelity Image (Gemini 2.5 Flash)...\n`);
+      const image = await generateImage(prompt);
       if (image) generatedMedia.push(image);
+    }
+
+    if (editImageMatch) {
+      const prompt = editImageMatch[1];
+      // Find reference image in current attachments
+      const refImage = attachments.find(a => a.type === 'image' && a.data);
+      
+      if (refImage && refImage.data) {
+          responseText = responseText.replace(editImageTagRegex, `\n[STATUS]: Editing Image (Gemini 2.5 Flash)...\n`);
+          const image = await generateImage(prompt, { data: refImage.data, mimeType: refImage.mimeType });
+          if (image) generatedMedia.push(image);
+      } else {
+          // Fallback to generation if no image found to edit
+          responseText = responseText.replace(editImageTagRegex, `\n[STATUS]: Generating Image (No Reference Found)...\n`);
+          const image = await generateImage(prompt);
+          if (image) generatedMedia.push(image);
+      }
     }
 
     if (videoMatch) {
@@ -259,100 +368,21 @@ export const sendMessageToSession = async (
         if (groundingChunks && groundingChunks.length > 0) {
           const sources = groundingChunks
             .map((chunk: any) => {
-              const chunkSources: string[] = [];
-              if (chunk.web?.uri && chunk.web?.title) {
-                chunkSources.push(`[${chunk.web.title}](${chunk.web.uri})`);
-              }
-              if (chunk.maps?.uri && chunk.maps?.title) {
-                chunkSources.push(`📍 [${chunk.maps.title}](${chunk.maps.uri})`);
-              }
-              return chunkSources;
+              if (chunk.web?.uri) return { title: chunk.web.title || 'Web Source', uri: chunk.web.uri, type: 'web' };
+              if (chunk.maps?.uri) return { title: chunk.maps.title || 'Location', uri: chunk.maps.uri, type: 'map' };
+              return null;
             })
-            .flat();
+            .filter(Boolean);
 
-          const uniqueSources = [...new Set(sources)];
+          const uniqueSources = Array.from(new Map(sources.map((item:any) => [item.uri, item])).values());
+          
           if (uniqueSources.length > 0) {
-            responseText += `\n\n### INTEL SOURCES\n${uniqueSources.map(s => `* ${s}`).join('\n')}`;
+            // Append as hidden JSON block for UI to parse and render as chips
+            responseText += `\n\n:::GROUNDING=${JSON.stringify(uniqueSources)}:::`;
           }
         }
     }
   }
 
   return { text: responseText, generatedMedia, audioData };
-};
-
-// --- Utilities ---
-
-export const generateConversationTitle = async (userPrompt: string): Promise<string> => {
-  const ai = getGenAI();
-  const promptText = userPrompt.trim() || "New Protocol Session";
-  
-  const prompt = `Generate a very concise, action-oriented title (3-5 words) for a chat that begins with this user prompt:
-"${promptText.substring(0, 500)}"
-
-Rules:
-1. No quotation marks.
-2. No prefixes like "Title:".
-3. Direct and professional.
-4. If the prompt is just "hello" or generic, generate a creative tech-themed title.`;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: { temperature: 0.7, maxOutputTokens: 20 }
-    });
-    let title = response.text?.trim() || "Protocol Log";
-    return title.replace(/^["']|["']$/g, '');
-  } catch (error) {
-    return "Protocol Log";
-  }
-};
-
-const decode = (base64: string): Uint8Array => {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-};
-
-// Gemini returns raw PCM data (24kHz, 1 channel), so we must manually decode it 
-// because standard audioContext.decodeAudioData expects a WAV/MP3 container with headers.
-const pcmToAudioBuffer = (
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number = 24000,
-  numChannels: number = 1
-): AudioBuffer => {
-  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      // Convert Int16 (-32768 to 32767) to Float32 (-1.0 to 1.0)
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
-
-export const playAudioData = async (
-  base64Audio: string, 
-  audioContext: AudioContext
-): Promise<AudioBufferSourceNode> => {
-  const pcmData = decode(base64Audio);
-  
-  // Directly create buffer from PCM data
-  const audioBuffer = pcmToAudioBuffer(pcmData, audioContext, 24000);
-  
-  const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(audioContext.destination);
-  source.start();
-  return source;
 };
