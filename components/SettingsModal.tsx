@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, Moon, Sun, User, Shield, Bell, Sliders, Smartphone, Monitor, Volume2, Globe, CheckCircle2, ChevronRight, LogOut, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Languages, Palette, Laptop, Brain } from 'lucide-react';
+import { X, Moon, Sun, User, Shield, Bell, Sliders, Smartphone, Monitor, Volume2, CheckCircle2, ChevronRight, LogOut, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain } from 'lucide-react';
 import { UserProfile } from '../types';
 import { playSound } from '../utils/audio';
 
@@ -259,7 +259,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                  </div>
               </div>
 
-              {/* Visuals & Typography */}
+              {/* Visuals */}
               <div className="space-y-3 pt-2">
                  <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Visuals</h4>
                  
