@@ -3,7 +3,7 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
@@ -105,6 +105,7 @@
         transition: background-color 0.3s ease, color 0.3s ease;
         -webkit-tap-highlight-color: transparent;
         overscroll-behavior-y: none;
+        padding-bottom: env(safe-area-inset-bottom);
       }
       
       /* Cross-Browser Scrollbar Styling */
@@ -157,6 +158,19 @@
       }
       button {
         border-radius: 0.75rem; /* Re-apply base radius */
+      }
+
+      /* Prevent mobile chrome text selection issues in fixed headers */
+      header {
+        user-select: none;
+      }
+
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
   <script type="importmap">

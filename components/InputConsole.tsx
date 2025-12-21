@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Paperclip, X, Zap, Video, Ghost, FileText, Mail, HardDrive, Calendar, Music, FileCode, FileJson, Plus, Settings2, Activity } from 'lucide-react';
+import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Paperclip, X, Zap, Video, Ghost, FileText, Mail, HardDrive, Calendar, Music, FileCode, FileJson, Plus, Settings2, Activity, Square } from 'lucide-react';
 import { playSound } from '../utils/audio';
 import { Attachment } from '../types';
 
@@ -21,21 +21,34 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   const [showMentions, setShowMentions] = useState(false);
   const [showExtraTools, setShowExtraTools] = useState(false);
   const [silenceProgress, setSilenceProgress] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const silenceTimerRef = useRef<any>(null);
   const progressIntervalRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const latestInputRef = useRef('');
   const sessionBaseTextRef = useRef(''); 
+
+  // Track viewport height to handle mobile keyboard
+  const [vh, setVh] = useState(window.innerHeight);
+
+  useEffect(() => {
+    const handleResize = () => setVh(window.innerHeight);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     latestInputRef.current = input;
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       // Adjust height dynamically, maxing out at a reasonable mobile height
-      const maxHeight = window.innerWidth < 768 ? 120 : 200;
+      const maxHeight = window.innerWidth < 768 ? 100 : 200;
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, maxHeight) + 'px';
     }
     
@@ -54,8 +67,13 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
       playSound('error');
       return;
     }
+    
+    if (isListening) {
+        stopListening();
+    }
+
     playSound('click');
-    onSend(textToSend, isDeepAgent, attachments, false); 
+    onSend(textToSend, isDeepAgent, attachments, isListening); 
     setInput('');
     setAttachments([]);
     setShowMentions(false);
@@ -81,13 +99,14 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     
     setSilenceProgress(0);
-    const duration = 1500; // 1.5s silence detection
-    const interval = 50;
+    const duration = 2000; // Increased for mobile stability
+    const interval = 40;
     let elapsed = 0;
     
     progressIntervalRef.current = setInterval(() => {
         elapsed += interval;
-        setSilenceProgress(Math.min((elapsed / duration) * 100, 100));
+        const progress = (elapsed / duration) * 100;
+        setSilenceProgress(Math.min(progress, 100));
     }, interval);
 
     silenceTimerRef.current = setTimeout(() => {
@@ -102,8 +121,45 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     }
     setIsListening(false);
     setSilenceProgress(0);
+    setAudioLevel(0);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    if (audioContextRef.current) {
+        if (audioContextRef.current.state !== 'closed') {
+            audioContextRef.current.close();
+        }
+        audioContextRef.current = null;
+    }
+  };
+
+  const startAudioVisualization = async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        audioContextRef.current = ctx;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyserRef.current = analyser;
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const updateLevel = () => {
+            if (!analyserRef.current || !isListening) return;
+            analyserRef.current.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            const avg = sum / dataArray.length;
+            setAudioLevel(avg);
+            requestAnimationFrame(updateLevel);
+        };
+        updateLevel();
+    } catch (e) {
+        console.warn("Audio visualization failed:", e);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -115,6 +171,9 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    setSilenceProgress(0);
   };
 
   const handleMentionSelect = (mention: string) => {
@@ -128,7 +187,9 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   };
 
   useEffect(() => {
+    // Correcting the SpeechRecognition API selection for mobile Chrome
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = true; 
@@ -138,26 +199,36 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
       recognition.onstart = () => {
         setIsListening(true);
         sessionBaseTextRef.current = latestInputRef.current;
+        startAudioVisualization();
       };
       
       recognition.onresult = (event: any) => {
         let transcript = '';
-        for (let i = 0; i < event.results.length; i++) {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
         const base = sessionBaseTextRef.current;
         const spacing = (base && !base.endsWith(' ')) ? ' ' : '';
-        setInput(base + spacing + transcript);
+        setInput(base + spacing + transcript.trim());
         startSilenceTimer();
       };
 
       recognition.onend = () => {
-        setIsListening(false);
-        setSilenceProgress(0);
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+        if (isListening) {
+           // On some browsers, mobile recognition might stop unexpectedly.
+           // We keep the state clean.
+           setIsListening(false);
+        }
       };
+      
+      recognition.onerror = (event: any) => {
+        console.error("Speech Recognition Error:", event.error);
+        stopListening();
+      };
+
       recognitionRef.current = recognition;
     }
+    
     return () => {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -166,7 +237,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
 
   const toggleListening = () => {
     if (!recognitionRef.current) {
-        alert("Speech Recognition not available.");
+        alert("Speech Recognition not available on this browser/device.");
         return;
     }
     playSound('click');
@@ -174,8 +245,15 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
       stopListening();
     } else {
       navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(() => recognitionRef.current.start())
-        .catch(() => alert("Microphone access denied."));
+        .then(() => {
+            try {
+                recognitionRef.current.start();
+            } catch (err) {
+                console.error("Recognition start failed:", err);
+                stopListening();
+            }
+        })
+        .catch(() => alert("Microphone access denied. Please enable it in browser settings."));
     }
   };
 
@@ -243,14 +321,14 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
 
   return (
     <div className={`
-      fixed bottom-0 right-0 z-50 flex justify-center items-end transition-all duration-300 pointer-events-none pb-4 md:pb-6 px-3 md:px-6
+      fixed bottom-0 right-0 z-50 flex justify-center items-end transition-all duration-300 pointer-events-none pb-safe px-3 md:px-6
       ${isSidebarOpen ? 'left-0 md:left-72' : 'left-0'}
-    `}>
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-protocol-obsidian via-protocol-obsidian/90 to-transparent z-[-1] pointer-events-none"></div>
+    `} style={{ bottom: 'env(safe-area-inset-bottom, 16px)' }}>
+      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-protocol-obsidian via-protocol-obsidian/95 to-transparent z-[-1] pointer-events-none"></div>
 
-      <div className="w-full max-w-4xl relative pointer-events-auto flex flex-col">
+      <div className="w-full max-w-4xl relative pointer-events-auto flex flex-col mb-4 md:mb-6">
         
-        {/* Indicators & Attachments Row - Mobile Friendly */}
+        {/* Indicators & Attachments Row */}
         <div className="flex flex-col gap-2 mb-2 w-full">
             <div className="flex flex-wrap gap-2 px-1">
                 {isIncognito && (
@@ -266,9 +344,16 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                     </div>
                 )}
                 {isListening && (
-                    <div className="px-2.5 py-1 bg-red-500/10 backdrop-blur-md border border-red-500/20 text-[8px] md:text-[9px] text-red-400 font-mono tracking-widest uppercase flex items-center gap-1.5 rounded-full shadow-lg animate-pulse">
-                        <Activity size={10} className="fill-current" />
-                        <span>Listening...</span>
+                    <div className="px-2.5 py-1 bg-red-500/10 backdrop-blur-md border border-red-500/20 text-[8px] md:text-[9px] text-red-400 font-mono tracking-widest uppercase flex items-center gap-1.5 rounded-full shadow-lg">
+                        <div className="flex items-center gap-1">
+                            <Activity size={10} className="animate-pulse" />
+                            <div className="flex items-end gap-[1px] h-2">
+                                {[1,2,3].map(i => (
+                                    <div key={i} className="w-[1.5px] bg-red-400 rounded-full transition-all duration-75" style={{ height: `${Math.max(20, Math.min(100, audioLevel * (i * 0.5 + 0.5)))}%` }}></div>
+                                ))}
+                            </div>
+                        </div>
+                        <span className="ml-1">Listening</span>
                     </div>
                 )}
             </div>
@@ -277,11 +362,11 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                 <div className="px-1 flex gap-2 overflow-x-auto custom-scrollbar no-scrollbar py-1">
                     {attachments.map((att, idx) => (
                     <div key={idx} className="relative group shrink-0">
-                        <div className="h-12 w-12 md:h-14 md:w-14 border border-protocol-border bg-protocol-input flex items-center justify-center relative rounded-xl overflow-hidden shadow-lg">
+                        <div className="h-14 w-14 border border-protocol-border bg-protocol-input flex items-center justify-center relative rounded-xl overflow-hidden shadow-lg">
                             {att.type === 'video' ? <Video size={16} /> : att.type === 'audio' ? <Music size={16} /> : att.type === 'file' ? getFileIcon(att) : <img src={`data:${att.mimeType};base64,${att.data}`} alt="" className="h-full w-full object-cover" />}
                         </div>
-                        <button onClick={() => removeAttachment(idx)} className="absolute -top-1.5 -right-1.5 bg-protocol-charcoal border border-protocol-border text-protocol-platinum p-1 hover:text-red-400 transition-colors rounded-full shadow-md">
-                            <X size={10} />
+                        <button onClick={() => removeAttachment(idx)} className="absolute -top-1.5 -right-1.5 bg-protocol-charcoal border border-protocol-border text-protocol-platinum p-1.5 hover:text-red-400 transition-colors rounded-full shadow-md z-10">
+                            <X size={12} />
                         </button>
                     </div>
                     ))}
@@ -301,14 +386,14 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
         
         {/* Main Input Bar */}
         <div className={`
-            bg-protocol-charcoal/90 backdrop-blur-2xl border border-protocol-border rounded-[1.75rem] shadow-heavy overflow-hidden ring-1 ring-white/5 transition-all duration-500 relative
-            ${isListening ? 'border-red-500/30 ring-red-500/10' : ''}
+            bg-protocol-charcoal/95 backdrop-blur-2xl border border-protocol-border rounded-[1.75rem] shadow-heavy overflow-hidden ring-1 ring-white/5 transition-all duration-500 relative
+            ${isListening ? 'border-red-500/50 ring-red-500/20' : ''}
         `}>
             {/* Silence Detection Progress Bar */}
             {isListening && silenceProgress > 0 && (
-                <div className="absolute top-0 left-0 right-0 h-0.5 bg-protocol-border overflow-hidden z-[60]">
+                <div className="absolute top-0 left-0 right-0 h-[3px] bg-protocol-border overflow-hidden z-[60]">
                     <div 
-                        className="h-full bg-red-500 transition-all duration-100 ease-linear"
+                        className="h-full bg-red-500 transition-all duration-100 ease-linear shadow-[0_0_8px_#ef4444]"
                         style={{ width: `${silenceProgress}%` }}
                     />
                 </div>
@@ -318,31 +403,31 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                 {/* Secondary Tools Expansion (Mobile Only) */}
                 {showExtraTools && (
                     <div className="flex items-center justify-around p-3 border-b border-protocol-border bg-protocol-obsidian/30 animate-fade-in md:hidden">
-                        <button onClick={() => { onToggleIncognito(); playSound('click'); }} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${isIncognito ? 'text-violet-400' : 'text-protocol-muted'}`}><Ghost size={18} /><span className="text-[8px] font-mono tracking-tighter">SECURE</span></button>
-                        <button onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${isDeepAgent ? 'text-emerald-400' : 'text-protocol-muted'}`}><BrainCircuit size={18} /><span className="text-[8px] font-mono tracking-tighter">THINK</span></button>
-                        <button onClick={() => { toggleListening(); playSound('click'); }} className={`p-2 rounded-xl flex flex-col items-center gap-1 ${isListening ? 'text-red-500' : 'text-protocol-muted'}`}>{isListening ? <MicOff size={18} /> : <Mic size={18} />}<span className="text-[8px] font-mono tracking-tighter">VOICE</span></button>
-                        <button onClick={() => { onOpenIntegrations(); playSound('click'); }} className="p-2 rounded-xl flex flex-col items-center gap-1 text-protocol-muted"><Plus size={18} /><span className="text-[8px] font-mono tracking-tighter">TOOLS</span></button>
+                        <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`p-3 rounded-xl flex flex-col items-center gap-1 ${isIncognito ? 'text-violet-400' : 'text-protocol-muted'}`}><Ghost size={20} /><span className="text-[8px] font-mono tracking-tighter">SECURE</span></button>
+                        <button type="button" onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`p-3 rounded-xl flex flex-col items-center gap-1 ${isDeepAgent ? 'text-emerald-400' : 'text-protocol-muted'}`}><BrainCircuit size={20} /><span className="text-[8px] font-mono tracking-tighter">THINK</span></button>
+                        <button type="button" onClick={() => { toggleListening(); playSound('click'); }} className={`p-3 rounded-xl flex flex-col items-center gap-1 ${isListening ? 'text-red-500' : 'text-protocol-muted'}`}>{isListening ? <MicOff size={20} /> : <Mic size={20} />}<span className="text-[8px] font-mono tracking-tighter">VOICE</span></button>
+                        <button type="button" onClick={() => { onOpenIntegrations(); playSound('click'); }} className="p-3 rounded-xl flex flex-col items-center gap-1 text-protocol-muted"><Plus size={20} /><span className="text-[8px] font-mono tracking-tighter">TOOLS</span></button>
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="flex items-end gap-1 p-2 md:p-2.5">
+                <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2 md:p-3">
                     {/* Left Actions */}
                     <div className="flex items-center mb-0.5">
                         <button
                             type="button"
-                            onClick={() => setShowExtraTools(!showExtraTools)}
-                            className={`w-9 h-9 md:hidden flex items-center justify-center transition-all rounded-full ${showExtraTools ? 'bg-protocol-platinum text-protocol-obsidian' : 'text-protocol-muted hover:text-protocol-platinum'}`}
+                            onClick={() => { setShowExtraTools(!showExtraTools); playSound('click'); }}
+                            className={`w-10 h-10 md:hidden flex items-center justify-center transition-all rounded-full ${showExtraTools ? 'bg-protocol-platinum text-protocol-obsidian' : 'text-protocol-muted hover:text-protocol-platinum'}`}
                         >
-                            <Settings2 size={18} />
+                            <Settings2 size={20} />
                         </button>
                         
                         <div className="hidden md:flex items-center">
-                            <button type="button" onClick={() => { onOpenIntegrations(); playSound('click'); }} className="w-9 h-9 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Plus size={18} /></button>
-                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-9 h-9 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Paperclip size={18} /></button>
+                            <button type="button" onClick={() => { onOpenIntegrations(); playSound('click'); }} className="w-10 h-10 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Plus size={20} /></button>
+                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-10 h-10 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Paperclip size={20} /></button>
                         </div>
                         
                         {!showExtraTools && (
-                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-9 h-9 md:hidden flex items-center justify-center text-protocol-muted hover:text-protocol-platinum rounded-full"><Paperclip size={18} /></button>
+                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-10 h-10 md:hidden flex items-center justify-center text-protocol-muted hover:text-protocol-platinum rounded-full"><Paperclip size={20} /></button>
                         )}
                         
                         <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*,video/*,audio/*,application/pdf,text/*,.csv,.json,.js,.jsx,.ts,.tsx,.py,.html,.css,.md,.xml" multiple />
@@ -354,26 +439,26 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                         onChange={handleChange}
                         onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
-                        placeholder={isListening ? "Listening... Speak naturally" : (isIncognito ? "Secure message..." : "Enter directive...")}
+                        placeholder={isListening ? "Listening..." : (isIncognito ? "Secure message..." : "Enter directive...")}
                         disabled={isLoading}
                         rows={1}
-                        className={`flex-1 bg-transparent text-protocol-platinum py-2 px-1.5 focus:outline-none placeholder-protocol-muted/60 font-sans text-[15px] leading-snug resize-none max-h-[120px] md:max-h-[200px] custom-scrollbar mb-0.5 transition-colors ${isListening ? 'placeholder-red-400/50' : ''}`}
+                        className={`flex-1 bg-transparent text-protocol-platinum py-2.5 px-2 focus:outline-none placeholder-protocol-muted/60 font-sans text-[16px] leading-snug resize-none max-h-[120px] md:max-h-[200px] custom-scrollbar mb-0.5 transition-colors ${isListening ? 'placeholder-red-400/50 italic' : ''}`}
                     />
 
                     {/* Right Actions */}
                     <div className="flex items-center gap-1 mb-0.5">
                         <div className="hidden md:flex items-center gap-1">
-                            <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isIncognito ? 'text-violet-400 bg-violet-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Incognito"><Ghost size={18} /></button>
-                            <button type="button" onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isDeepAgent ? 'text-emerald-400 bg-emerald-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="DeepAgent"><BrainCircuit size={18} /></button>
-                            <button type="button" onClick={toggleListening} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isListening ? 'text-red-500 bg-red-500/10 animate-pulse' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Voice Input">{isListening ? <MicOff size={18} /> : <Mic size={18} />}</button>
+                            <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${isIncognito ? 'text-violet-400 bg-violet-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Incognito"><Ghost size={20} /></button>
+                            <button type="button" onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${isDeepAgent ? 'text-emerald-400 bg-emerald-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="DeepAgent"><BrainCircuit size={20} /></button>
+                            <button type="button" onClick={toggleListening} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${isListening ? 'text-red-500 bg-red-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Voice Input">{isListening ? <MicOff size={20} /> : <Mic size={20} />}</button>
                         </div>
 
                         <button
                             type="submit"
                             disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                            className={`h-9 w-9 md:w-auto md:px-4 flex items-center justify-center bg-protocol-platinum text-protocol-obsidian font-bold text-[10px] uppercase tracking-widest hover:bg-protocol-muted transition-all disabled:opacity-20 rounded-full shadow-lg shrink-0`}
+                            className={`h-10 w-10 md:w-auto md:px-5 flex items-center justify-center ${isListening ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-protocol-platinum text-protocol-obsidian hover:bg-protocol-muted'} font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-20 rounded-full shadow-lg shrink-0`}
                         >
-                            {isLoading ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={20} strokeWidth={2.5} />}
+                            {isLoading ? <Loader2 size={18} className="animate-spin" /> : (isListening ? <Square size={16} fill="currentColor" /> : <ArrowUp size={22} strokeWidth={2.5} />)}
                         </button>
                     </div>
                 </form>
