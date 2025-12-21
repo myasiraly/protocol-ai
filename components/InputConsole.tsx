@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Paperclip, X, Zap, Video, Ghost, FileText, Mail, HardDrive, Calendar, Music, FileCode, FileJson, Plus, Settings2 } from 'lucide-react';
+import { ArrowUp, Loader2, Mic, MicOff, BrainCircuit, Paperclip, X, Zap, Video, Ghost, FileText, Mail, HardDrive, Calendar, Music, FileCode, FileJson, Plus, Settings2, Activity } from 'lucide-react';
 import { playSound } from '../utils/audio';
 import { Attachment } from '../types';
 
@@ -20,11 +20,13 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showMentions, setShowMentions] = useState(false);
   const [showExtraTools, setShowExtraTools] = useState(false);
+  const [silenceProgress, setSilenceProgress] = useState(0);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const silenceTimerRef = useRef<any>(null);
+  const progressIntervalRef = useRef<any>(null);
   const latestInputRef = useRef('');
   const sessionBaseTextRef = useRef(''); 
 
@@ -74,12 +76,34 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     stopListening();
   };
 
+  const startSilenceTimer = () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    
+    setSilenceProgress(0);
+    const duration = 1500; // 1.5s silence detection
+    const interval = 50;
+    let elapsed = 0;
+    
+    progressIntervalRef.current = setInterval(() => {
+        elapsed += interval;
+        setSilenceProgress(Math.min((elapsed / duration) * 100, 100));
+    }, interval);
+
+    silenceTimerRef.current = setTimeout(() => {
+        clearInterval(progressIntervalRef.current);
+        handleAutoSend();
+    }, duration);
+  };
+
   const stopListening = () => {
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch (e) {}
     }
     setIsListening(false);
+    setSilenceProgress(0);
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -117,7 +141,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
       };
       
       recognition.onresult = (event: any) => {
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         let transcript = '';
         for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
@@ -125,15 +148,20 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
         const base = sessionBaseTextRef.current;
         const spacing = (base && !base.endsWith(' ')) ? ' ' : '';
         setInput(base + spacing + transcript);
-        silenceTimerRef.current = setTimeout(() => handleAutoSend(), 1500);
+        startSilenceTimer();
       };
 
       recognition.onend = () => {
         setIsListening(false);
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        setSilenceProgress(0);
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
       };
       recognitionRef.current = recognition;
     }
+    return () => {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    };
   }, []);
 
   const toggleListening = () => {
@@ -237,6 +265,12 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                         <span className="hidden xs:inline">DeepAgent</span>
                     </div>
                 )}
+                {isListening && (
+                    <div className="px-2.5 py-1 bg-red-500/10 backdrop-blur-md border border-red-500/20 text-[8px] md:text-[9px] text-red-400 font-mono tracking-widest uppercase flex items-center gap-1.5 rounded-full shadow-lg animate-pulse">
+                        <Activity size={10} className="fill-current" />
+                        <span>Listening...</span>
+                    </div>
+                )}
             </div>
 
             {attachments.length > 0 && (
@@ -266,7 +300,20 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
         )}
         
         {/* Main Input Bar */}
-        <div className="bg-protocol-charcoal/90 backdrop-blur-2xl border border-protocol-border rounded-[1.75rem] shadow-heavy overflow-hidden ring-1 ring-white/5">
+        <div className={`
+            bg-protocol-charcoal/90 backdrop-blur-2xl border border-protocol-border rounded-[1.75rem] shadow-heavy overflow-hidden ring-1 ring-white/5 transition-all duration-500 relative
+            ${isListening ? 'border-red-500/30 ring-red-500/10' : ''}
+        `}>
+            {/* Silence Detection Progress Bar */}
+            {isListening && silenceProgress > 0 && (
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-protocol-border overflow-hidden z-[60]">
+                    <div 
+                        className="h-full bg-red-500 transition-all duration-100 ease-linear"
+                        style={{ width: `${silenceProgress}%` }}
+                    />
+                </div>
+            )}
+
             <div className="flex flex-col">
                 {/* Secondary Tools Expansion (Mobile Only) */}
                 {showExtraTools && (
@@ -294,7 +341,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-9 h-9 flex items-center justify-center text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10 rounded-full transition-all"><Paperclip size={18} /></button>
                         </div>
                         
-                        {/* Mobile Clip button always visible if not expanded */}
                         {!showExtraTools && (
                             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="w-9 h-9 md:hidden flex items-center justify-center text-protocol-muted hover:text-protocol-platinum rounded-full"><Paperclip size={18} /></button>
                         )}
@@ -308,10 +354,10 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                         onChange={handleChange}
                         onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
-                        placeholder={isIncognito ? "Secure message..." : "Enter directive..."}
+                        placeholder={isListening ? "Listening... Speak naturally" : (isIncognito ? "Secure message..." : "Enter directive...")}
                         disabled={isLoading}
                         rows={1}
-                        className="flex-1 bg-transparent text-protocol-platinum py-2 px-1.5 focus:outline-none placeholder-protocol-muted/60 font-sans text-[15px] leading-snug resize-none max-h-[120px] md:max-h-[200px] custom-scrollbar mb-0.5"
+                        className={`flex-1 bg-transparent text-protocol-platinum py-2 px-1.5 focus:outline-none placeholder-protocol-muted/60 font-sans text-[15px] leading-snug resize-none max-h-[120px] md:max-h-[200px] custom-scrollbar mb-0.5 transition-colors ${isListening ? 'placeholder-red-400/50' : ''}`}
                     />
 
                     {/* Right Actions */}
@@ -319,7 +365,7 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                         <div className="hidden md:flex items-center gap-1">
                             <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isIncognito ? 'text-violet-400 bg-violet-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Incognito"><Ghost size={18} /></button>
                             <button type="button" onClick={() => { setIsDeepAgent(!isDeepAgent); playSound('click'); }} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isDeepAgent ? 'text-emerald-400 bg-emerald-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="DeepAgent"><BrainCircuit size={18} /></button>
-                            <button type="button" onClick={toggleListening} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isListening ? 'text-protocol-swissRed animate-pulse' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Voice Input">{isListening ? <MicOff size={18} /> : <Mic size={18} />}</button>
+                            <button type="button" onClick={toggleListening} className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${isListening ? 'text-red-500 bg-red-500/10 animate-pulse' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Voice Input">{isListening ? <MicOff size={18} /> : <Mic size={18} />}</button>
                         </div>
 
                         <button
