@@ -33,21 +33,12 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   const streamRef = useRef<MediaStream | null>(null);
   const latestInputRef = useRef('');
   const sessionBaseTextRef = useRef(''); 
-
-  // Track viewport height to handle mobile keyboard
-  const [vh, setVh] = useState(window.innerHeight);
-
-  useEffect(() => {
-    const handleResize = () => setVh(window.innerHeight);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const shouldRestartRef = useRef(false);
 
   useEffect(() => {
     latestInputRef.current = input;
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      // Adjust height dynamically, maxing out at a reasonable mobile height
       const maxHeight = window.innerWidth < 768 ? 100 : 200;
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, maxHeight) + 'px';
     }
@@ -99,7 +90,8 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     
     setSilenceProgress(0);
-    const duration = 2000; // Increased for mobile stability
+    // Threshold adjusted for mobile background noise
+    const duration = 2200; 
     const interval = 40;
     let elapsed = 0;
     
@@ -116,8 +108,12 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
   };
 
   const stopListening = () => {
+    shouldRestartRef.current = false;
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
+      try { 
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop(); 
+      } catch (e) {}
     }
     setIsListening(false);
     setSilenceProgress(0);
@@ -141,14 +137,14 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         audioContextRef.current = ctx;
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 128; // Reduced for performance
         const source = ctx.createMediaStreamSource(stream);
         source.connect(analyser);
         analyserRef.current = analyser;
 
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
         const updateLevel = () => {
-            if (!analyserRef.current || !isListening) return;
+            if (!analyserRef.current || !shouldRestartRef.current) return;
             analyserRef.current.getByteFrequencyData(dataArray);
             let sum = 0;
             for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
@@ -186,75 +182,91 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
      playSound('click');
   };
 
-  useEffect(() => {
-    // Correcting the SpeechRecognition API selection for mobile Chrome
+  const initRecognition = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true; 
-      recognition.interimResults = true; 
-      recognition.lang = 'en-US';
-      
-      recognition.onstart = () => {
-        setIsListening(true);
-        sessionBaseTextRef.current = latestInputRef.current;
-        startAudioVisualization();
-      };
-      
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        const base = sessionBaseTextRef.current;
-        const spacing = (base && !base.endsWith(' ')) ? ' ' : '';
-        setInput(base + spacing + transcript.trim());
-        startSilenceTimer();
-      };
+    if (!SpeechRecognition) return null;
 
-      recognition.onend = () => {
-        if (isListening) {
-           // On some browsers, mobile recognition might stop unexpectedly.
-           // We keep the state clean.
-           setIsListening(false);
-        }
-      };
-      
-      recognition.onerror = (event: any) => {
-        console.error("Speech Recognition Error:", event.error);
-        stopListening();
-      };
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
 
-      recognitionRef.current = recognition;
-    }
-    
-    return () => {
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    recognition.onstart = () => {
+      setIsListening(true);
+      sessionBaseTextRef.current = latestInputRef.current;
+      startAudioVisualization();
     };
-  }, []);
+
+    recognition.onresult = (event: any) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      const base = sessionBaseTextRef.current;
+      const spacing = (base && !base.endsWith(' ')) ? ' ' : '';
+      setInput(base + spacing + transcript.trim());
+      startSilenceTimer();
+    };
+
+    recognition.onend = () => {
+      if (shouldRestartRef.current) {
+        try {
+          recognition.start();
+        } catch (e) {
+          console.error("Auto-restart failed", e);
+          stopListening();
+        }
+      } else {
+        setIsListening(false);
+        setSilenceProgress(0);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'no-speech') {
+        // No-speech is common on mobile, just let it continue/restart
+        return;
+      }
+      console.error("Speech Recognition Error:", event.error);
+      stopListening();
+    };
+
+    return recognition;
+  };
 
   const toggleListening = () => {
-    if (!recognitionRef.current) {
-        alert("Speech Recognition not available on this browser/device.");
-        return;
-    }
-    playSound('click');
     if (isListening) {
       stopListening();
-    } else {
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(() => {
-            try {
-                recognitionRef.current.start();
-            } catch (err) {
-                console.error("Recognition start failed:", err);
-                stopListening();
-            }
-        })
-        .catch(() => alert("Microphone access denied. Please enable it in browser settings."));
+      playSound('click');
+      return;
     }
+
+    if (!recognitionRef.current) {
+      recognitionRef.current = initRecognition();
+    }
+
+    if (!recognitionRef.current) {
+      alert("Speech Recognition not supported in this browser.");
+      return;
+    }
+
+    playSound('click');
+    shouldRestartRef.current = true;
+    
+    // Explicit user gesture needed for mobile Chrome
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(() => {
+        try {
+          recognitionRef.current.start();
+        } catch (err) {
+          console.error("Recognition start failed:", err);
+          stopListening();
+        }
+      })
+      .catch((err) => {
+        console.error("Mic access error:", err);
+        alert("Microphone access denied. Please enable it in browser settings.");
+      });
   };
 
   const processFile = (file: File) => {
@@ -328,7 +340,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
 
       <div className="w-full max-w-4xl relative pointer-events-auto flex flex-col mb-4 md:mb-6">
         
-        {/* Indicators & Attachments Row */}
         <div className="flex flex-col gap-2 mb-2 w-full">
             <div className="flex flex-wrap gap-2 px-1">
                 {isIncognito && (
@@ -374,7 +385,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
             )}
         </div>
 
-        {/* Mentions Popover */}
         {showMentions && (
             <div className="absolute bottom-full left-4 mb-4 bg-protocol-charcoal border border-protocol-border p-2 w-48 shadow-2xl z-30 flex flex-col gap-1 rounded-2xl overflow-hidden animate-slide-up">
                 <div className="px-4 py-2 text-[9px] text-protocol-muted font-mono uppercase tracking-wider">Ecosystem</div>
@@ -384,12 +394,10 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
             </div>
         )}
         
-        {/* Main Input Bar */}
         <div className={`
             bg-protocol-charcoal/95 backdrop-blur-2xl border border-protocol-border rounded-[1.75rem] shadow-heavy overflow-hidden ring-1 ring-white/5 transition-all duration-500 relative
             ${isListening ? 'border-red-500/50 ring-red-500/20' : ''}
         `}>
-            {/* Silence Detection Progress Bar */}
             {isListening && silenceProgress > 0 && (
                 <div className="absolute top-0 left-0 right-0 h-[3px] bg-protocol-border overflow-hidden z-[60]">
                     <div 
@@ -400,7 +408,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
             )}
 
             <div className="flex flex-col">
-                {/* Secondary Tools Expansion (Mobile Only) */}
                 {showExtraTools && (
                     <div className="flex items-center justify-around p-3 border-b border-protocol-border bg-protocol-obsidian/30 animate-fade-in md:hidden">
                         <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`p-3 rounded-xl flex flex-col items-center gap-1 ${isIncognito ? 'text-violet-400' : 'text-protocol-muted'}`}><Ghost size={20} /><span className="text-[8px] font-mono tracking-tighter">SECURE</span></button>
@@ -411,7 +418,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                 )}
 
                 <form onSubmit={handleSubmit} className="flex items-end gap-1.5 p-2 md:p-3">
-                    {/* Left Actions */}
                     <div className="flex items-center mb-0.5">
                         <button
                             type="button"
@@ -445,7 +451,6 @@ export const InputConsole: React.FC<InputConsoleProps> = ({ onSend, isLoading, i
                         className={`flex-1 bg-transparent text-protocol-platinum py-2.5 px-2 focus:outline-none placeholder-protocol-muted/60 font-sans text-[16px] leading-snug resize-none max-h-[120px] md:max-h-[200px] custom-scrollbar mb-0.5 transition-colors ${isListening ? 'placeholder-red-400/50 italic' : ''}`}
                     />
 
-                    {/* Right Actions */}
                     <div className="flex items-center gap-1 mb-0.5">
                         <div className="hidden md:flex items-center gap-1">
                             <button type="button" onClick={() => { onToggleIncognito(); playSound('click'); }} className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${isIncognito ? 'text-violet-400 bg-violet-500/10' : 'text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border/10'}`} title="Incognito"><Ghost size={20} /></button>

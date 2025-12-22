@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Cloud, CloudOff, RefreshCw, Settings, LogOut, User as UserIcon, ChevronDown } from 'lucide-react';
+import { Menu, Cloud, CloudOff, RefreshCw, Settings, LogOut, User as UserIcon, ChevronDown, Sun, Moon } from 'lucide-react';
 import { UserProfile } from '../types';
 import { ProtocolLogo } from './ProtocolLogo';
+import { playSound } from '../utils/audio';
 
 interface ProtocolHeaderProps {
   user: UserProfile | null;
@@ -12,6 +13,8 @@ interface ProtocolHeaderProps {
   isSaving?: boolean;
   onOpenTraining?: () => void;
   onOpenSettings?: () => void;
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
 }
 
 export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({ 
@@ -21,7 +24,9 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({
   isLoading = false, 
   isSaving = false,
   onOpenTraining,
-  onOpenSettings
+  onOpenSettings,
+  isDarkMode,
+  onToggleTheme
 }) => {
   const [time, setTime] = useState(new Date());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -46,13 +51,13 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({
   const timeStr = time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 h-20 flex items-center justify-between px-6 bg-protocol-obsidian/80 backdrop-blur-xl border-b border-protocol-border transition-all duration-500">
+    <header className="fixed top-0 left-0 right-0 z-40 h-20 flex items-center justify-between px-4 md:px-6 bg-protocol-obsidian/80 backdrop-blur-xl border-b border-protocol-border transition-all duration-500">
       
       {/* Left: Branding & Toggle */}
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-2 md:gap-5">
         <button 
           onClick={onToggleSidebar}
-          className="text-protocol-platinum hover:text-protocol-muted transition-colors opacity-80 hover:opacity-100 p-1.5 rounded-full hover:bg-protocol-border"
+          className="text-protocol-platinum hover:text-protocol-muted transition-colors opacity-80 hover:opacity-100 p-2 rounded-full hover:bg-protocol-border"
         >
           <Menu size={20} strokeWidth={2} />
         </button>
@@ -74,8 +79,19 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({
       </div>
 
       {/* Right: User Profile & Sync Status */}
-      <div className="flex items-center gap-8">
+      <div className="flex items-center gap-3 md:gap-8">
          
+         {/* Theme Toggle - Mobile Friendly Access */}
+         <button 
+            onClick={() => { playSound('click'); onToggleTheme(); }}
+            className="p-2 text-protocol-muted hover:text-protocol-platinum transition-all rounded-full hover:bg-protocol-border relative overflow-hidden"
+            title="Toggle Theme"
+         >
+            <div className={`transition-transform duration-500 ${isDarkMode ? 'rotate-0' : 'rotate-90'}`}>
+                {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
+            </div>
+         </button>
+
          {/* Sync Indicator - Shows history is working */}
          {user && (
            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-protocol-charcoal border border-protocol-border">
@@ -137,3 +153,4 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({
     </header>
   );
 };
+

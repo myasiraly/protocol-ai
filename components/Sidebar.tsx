@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, X, PanelLeftClose, Search, Edit2, Check, Download, History, Sun, Moon } from 'lucide-react';
+import { Plus, Trash2, X, PanelLeftClose, Search, Edit2, Check, Download, History } from 'lucide-react';
 import { Conversation } from '../types';
 import { playSound } from '../utils/audio';
 
@@ -15,8 +15,6 @@ interface SidebarProps {
   onRenameConversation: (id: string, newTitle: string) => void;
   onExportData: () => void;
   onClearAllHistory: () => void;
-  isDarkMode: boolean;
-  onToggleTheme: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -30,8 +28,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRenameConversation,
   onExportData,
   onClearAllHistory,
-  isDarkMode,
-  onToggleTheme,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -75,7 +71,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         
-        {/* Header */}
         <div className="h-20 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-2 opacity-60 text-protocol-platinum">
              <History size={14} strokeWidth={1.5} />
@@ -87,7 +82,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Actions - Airy Layout */}
         <div className="px-6 pb-6 shrink-0 space-y-4">
           <button
             onClick={() => {
@@ -113,7 +107,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* List - Editorial Typography & Hairline Dividers */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-4">
           {conversations.length === 0 ? (
             <div className="text-center py-20 opacity-20">
@@ -195,44 +188,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Footer Actions & Theme Toggle */}
-        <div className="px-6 py-5 border-t border-protocol-border shrink-0 bg-protocol-sidebar">
-          
-          {/* Elegant Segmented Theme Control */}
-          <div 
-            onClick={onToggleTheme}
-            className="relative h-9 w-full bg-protocol-obsidian border border-protocol-border rounded-xl flex items-center p-1 cursor-pointer group select-none shadow-inner"
-          >
-              {/* Sliding Active Background */}
-              <div className={`
-                  absolute top-1 bottom-1 w-[calc(50%-4px)] bg-protocol-charcoal border border-protocol-border rounded-lg shadow-sm transition-all duration-500 cubic-bezier(0.19, 1, 0.22, 1)
-                  ${isDarkMode ? 'translate-x-[calc(100%+4px)]' : 'translate-x-0'}
-              `} />
-
-              {/* Light Option */}
-              <div className={`flex-1 flex items-center justify-center gap-2 z-10 transition-colors duration-300 ${!isDarkMode ? 'text-protocol-platinum' : 'text-protocol-muted group-hover:text-protocol-platinum'}`}>
-                  <Sun size={14} strokeWidth={1.5} />
-                  <span className="text-[9px] font-mono font-bold tracking-widest uppercase">Light</span>
-              </div>
-              
-              {/* Dark Option */}
-              <div className={`flex-1 flex items-center justify-center gap-2 z-10 transition-colors duration-300 ${isDarkMode ? 'text-protocol-platinum' : 'text-protocol-muted group-hover:text-protocol-platinum'}`}>
-                  <Moon size={14} strokeWidth={1.5} />
-                  <span className="text-[9px] font-mono font-bold tracking-widest uppercase">Dark</span>
-              </div>
-          </div>
-
-          <div className="mt-5 flex items-center justify-between opacity-40 hover:opacity-100 transition-opacity">
+        <div className="px-6 py-6 border-t border-protocol-border shrink-0 bg-protocol-sidebar" style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}>
+          <div className="flex items-center justify-between opacity-40 hover:opacity-100 transition-opacity">
               <button onClick={onExportData} className="flex items-center gap-2 text-[8px] font-mono uppercase tracking-widest text-protocol-muted hover:text-protocol-platinum transition-colors p-1.5 rounded-lg hover:bg-protocol-border">
                 <Download size={10} /> Data
               </button>
               <button onClick={() => { playSound('error'); setShowClearConfirm(true); }} className="flex items-center gap-2 text-[8px] font-mono uppercase tracking-widest text-protocol-muted hover:text-protocol-swissRed transition-colors p-1.5 rounded-lg hover:bg-protocol-border">
-                 <Trash2 size={10} /> Clear
+                 <Trash2 size={10} /> Clear All
               </button>
           </div>
           
           {showClearConfirm && (
-            <div className="absolute bottom-4 left-4 right-4 bg-red-950/90 backdrop-blur-md border border-red-500/20 p-3 animate-slide-up shadow-2xl z-50 rounded-xl">
+            <div className="absolute bottom-20 left-4 right-4 bg-red-950/90 backdrop-blur-md border border-red-500/20 p-3 animate-slide-up shadow-2xl z-50 rounded-xl">
               <p className="text-[10px] text-red-200 mb-3 font-heading text-center">Permanently erase all logs?</p>
               <div className="flex gap-2">
                 <button 

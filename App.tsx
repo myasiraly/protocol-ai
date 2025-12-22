@@ -37,31 +37,27 @@ const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   
-  // Theme & Appearance State
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  // Default to Light Mode (Sun) as requested
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [textSize, setTextSize] = useState<'12px' | '14px' | '16px'>('16px');
 
-  // Default to open on desktop, closed on mobile
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); // Cloud Sync Status
+  const [isSaving, setIsSaving] = useState(false); 
   const [isIncognito, setIsIncognito] = useState(false);
   
-  // Modals
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
   const [isTrainingOpen, setIsTrainingOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
-  // Settings
   const [integrations, setIntegrations] = useState<Integration[]>(DEFAULT_INTEGRATIONS);
   const [trainingConfig, setTrainingConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Theme Effect
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -70,7 +66,6 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // Text Size Effect
   useEffect(() => {
     document.documentElement.style.fontSize = textSize;
   }, [textSize]);
@@ -80,11 +75,9 @@ const App: React.FC = () => {
     setIsDarkMode(!isDarkMode);
   };
 
-  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
-        // STRICTLY ENFORCE EMAIL VERIFICATION
         if (firebaseUser && firebaseUser.emailVerified) {
           setUser({
             uid: firebaseUser.uid,
@@ -93,7 +86,6 @@ const App: React.FC = () => {
             picture: firebaseUser.photoURL || undefined
           });
 
-          // Load Training Config safely
           try {
              const savedConfig = await getUserTrainingConfig(firebaseUser.uid);
              if (savedConfig) {
@@ -116,14 +108,12 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Firestore Sync: Load conversations when user is logged in
   useEffect(() => {
     if (!user) {
       setConversations([]);
       return;
     }
 
-    // Subscribe to real-time updates for this user's conversations
     const q = query(
       collection(db, 'users', user.uid, 'conversations'), 
       orderBy('updatedAt', 'desc')
@@ -137,7 +127,6 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // Sync messages when currentConversationId changes or conversations update from cloud
   useEffect(() => {
     if (currentConversationId) {
       const conv = conversations.find(c => c.id === currentConversationId);
@@ -152,7 +141,6 @@ const App: React.FC = () => {
     }
   }, [currentConversationId, conversations]);
 
-  // Scroll on message updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -204,7 +192,6 @@ const App: React.FC = () => {
     e.stopPropagation();
     if (!user) return;
     
-    // Optimistic update
     if (currentConversationId === id) {
         setCurrentConversationId(null);
         setMessages([]);
@@ -263,7 +250,6 @@ const App: React.FC = () => {
       }
   };
 
-  // WRAPPED SAVE FUNCTION FOR UI FEEDBACK
   const saveConversationToCloud = async (conv: Conversation) => {
     if (!user) return;
     setIsSaving(true);
@@ -272,7 +258,6 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to save conversation to cloud", error);
     } finally {
-        // Slight delay to ensure user sees the transition
         setTimeout(() => setIsSaving(false), 800);
     }
   };
@@ -298,8 +283,8 @@ const App: React.FC = () => {
             prevHistory,
             lastUserMsg.content,
             lastUserMsg.attachments,
-            'TEXT', // Default
-            false, // Default
+            'TEXT', 
+            false, 
             connectedTools,
             trainingConfig
         );
@@ -462,7 +447,6 @@ const App: React.FC = () => {
     }
   }, [currentConversationId, messages, conversations, user, isIncognito, integrations, trainingConfig]);
 
-  // Loading State - Use a real spinner instead of returning null (black screen)
   if (isAuthLoading) {
      return (
         <div className="h-[100dvh] w-full bg-protocol-obsidian flex items-center justify-center">
@@ -491,8 +475,6 @@ const App: React.FC = () => {
         onRenameConversation={handleRenameConversation}
         onExportData={handleExportData}
         onClearAllHistory={handleClearAllHistory}
-        isDarkMode={isDarkMode}
-        onToggleTheme={toggleTheme}
       />
 
       <IntegrationsModal
@@ -528,12 +510,13 @@ const App: React.FC = () => {
           isSaving={isSaving}
           onOpenTraining={() => setIsTrainingOpen(true)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          isDarkMode={isDarkMode}
+          onToggleTheme={toggleTheme}
         />
         
         <main className="relative flex-1 flex flex-col items-center pt-24 pb-48 px-4 overflow-y-auto custom-scrollbar z-10">
           <div className="w-full max-w-4xl flex flex-col">
             
-            {/* Minimal Empty State */}
             {messages.length === 0 && (
               <div className="w-full h-[60vh] flex flex-col items-center justify-center animate-fade-in opacity-20 select-none pointer-events-none">
                  <h1 className="text-5xl md:text-7xl font-heading font-bold tracking-tighter text-protocol-platinum mb-4 transition-colors">PROTOCOL</h1>

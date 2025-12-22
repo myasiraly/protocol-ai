@@ -3,13 +3,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Mic, MicOff, Headphones, Activity } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 import { playSound } from '../utils/audio';
+import { AUDIO_MODEL_NAME } from '../constants';
 
 interface VoiceModeProps {
   isOpen: boolean;
   onClose: (transcript: string) => void;
 }
 
-// --- Audio Helpers (from Google GenAI SDK examples) ---
+// --- Audio Helpers ---
 function createBlob(data: Float32Array): { data: string; mimeType: string } {
   const l = data.length;
   const int16 = new Int16Array(l);
@@ -70,7 +71,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Initialize Session
   useEffect(() => {
     if (!isOpen) return;
     mountedRef.current = true;
@@ -83,34 +83,35 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
 
         const ai = new GoogleGenAI({ apiKey });
         
-        // Audio Contexts
         const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        
+        // Resume context - Crucial for mobile Chrome
+        if (inputCtx.state === 'suspended') await inputCtx.resume();
+        if (outputCtx.state === 'suspended') await outputCtx.resume();
+        
         audioContextsRef.current = { input: inputCtx, output: outputCtx };
 
-        // Visualizer Setup
         const analyser = outputCtx.createAnalyser();
         analyser.fftSize = 256;
         analyserRef.current = analyser;
 
-        // Input Stream
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
 
-        // Connect Gemini Live
         let nextStartTime = 0;
         const sources = new Set<AudioBufferSourceNode>();
 
         const sessionPromise = ai.live.connect({
-          model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+          model: AUDIO_MODEL_NAME, 
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Fenrir' } },
             },
             systemInstruction: "You are Protocol, a concise and efficient intelligent assistant. Keep responses brief and spoken-style.",
-            inputAudioTranscription: { model: "gemini-2.5-flash" },
-            outputAudioTranscription: { model: "gemini-2.5-flash" }
+            inputAudioTranscription: { model: "gemini-2.0-flash" },
+            outputAudioTranscription: { model: "gemini-2.0-flash" }
           },
           callbacks: {
             onopen: () => {
@@ -118,20 +119,16 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
               setStatus('connected');
               playSound('success');
 
-              // Setup Input Processing
               const source = inputCtx.createMediaStreamSource(stream);
               const processor = inputCtx.createScriptProcessor(4096, 1, 1);
               
               processor.onaudioprocess = (e) => {
-                if (isMuted) return; // Simple software mute
+                if (isMuted) return;
                 const inputData = e.inputBuffer.getChannelData(0);
                 const blobItem = createBlob(inputData);
                 sessionPromise.then(session => {
                    session.sendRealtimeInput({ media: blobItem });
                 });
-                
-                // Simple visualizer fallback for input volume if needed
-                // But we mainly visualize output
               };
 
               source.connect(processor);
@@ -140,7 +137,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
             onmessage: async (msg: LiveServerMessage) => {
               if (!mountedRef.current) return;
 
-              // Handle Transcripts
               if (msg.serverContent?.inputTranscription) {
                  transcriptBuffer.current.user += msg.serverContent.inputTranscription.text;
               }
@@ -154,7 +150,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
                  transcriptBuffer.current.model = '';
               }
 
-              // Handle Audio
               const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
               if (audioData) {
                 nextStartTime = Math.max(nextStartTime, outputCtx.currentTime);
@@ -162,7 +157,7 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
                 
                 const source = outputCtx.createBufferSource();
                 source.buffer = buffer;
-                source.connect(analyser); // Route through visualizer
+                source.connect(analyser); 
                 analyser.connect(outputCtx.destination);
                 
                 source.addEventListener('ended', () => sources.delete(source));
@@ -171,9 +166,7 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
                 sources.add(source);
               }
             },
-            onclose: () => {
-               // Cleanup handled in cleanup function
-            },
+            onclose: () => {},
             onerror: (e) => {
                console.error("Live Error", e);
                if (mountedRef.current) setStatus('error');
@@ -193,19 +186,13 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
 
     return () => {
       mountedRef.current = false;
-      // Close session
       sessionRef.current?.then((s: any) => s.close());
-      
-      // Stop Stream
       streamRef.current?.getTracks().forEach(t => t.stop());
-      
-      // Close Contexts
       audioContextsRef.current?.input.close();
       audioContextsRef.current?.output.close();
     };
   }, [isOpen]);
 
-  // Visualizer Loop
   useEffect(() => {
      if (!isOpen || !analyserRef.current) return;
      let animId: number;
@@ -218,20 +205,18 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
         const dataArray = new Uint8Array(bufferLength);
         analyserRef.current.getByteFrequencyData(dataArray);
 
-        // Calc average volume
         let sum = 0;
         for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
         const avg = sum / bufferLength;
-        setVolume(avg); // Use for UI scaling
+        setVolume(avg);
 
-        // Draw Circle Visualizer
         const w = canvasRef.current.width;
         const h = canvasRef.current.height;
         ctx.clearRect(0, 0, w, h);
         
         const cx = w / 2;
         const cy = h / 2;
-        const radius = 50 + (avg * 0.5); // Pulse radius
+        const radius = 50 + (avg * 0.5);
 
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
@@ -241,7 +226,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Inner core
         ctx.beginPath();
         ctx.arc(cx, cy, radius * 0.6, 0, 2 * Math.PI);
         ctx.fillStyle = status === 'connected' ? '#3b82f6' : '#ef4444';
@@ -254,12 +238,9 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
   }, [isOpen, status]);
 
   const handleClose = () => {
-     // Compile final transcript
      let fullLog = transcriptBuffer.current.history.join('\n');
-     // Add any remaining buffer
      if (transcriptBuffer.current.user) fullLog += `\nUser: ${transcriptBuffer.current.user}`;
      if (transcriptBuffer.current.model) fullLog += `\nProtocol: ${transcriptBuffer.current.model}`;
-     
      onClose(fullLog);
   };
 
@@ -267,11 +248,9 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[100] bg-[#050505] flex flex-col items-center justify-center animate-fade-in">
-       {/* Background Ambience */}
        <div className="absolute inset-0 bg-noise opacity-10 pointer-events-none"></div>
        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-900/5 blur-[120px] rounded-full pointer-events-none"></div>
 
-       {/* Close Button */}
        <button 
          onClick={handleClose}
          className="absolute top-6 right-6 p-2 bg-zinc-900/50 hover:bg-zinc-800 text-gray-400 hover:text-white rounded-full border border-white/5 transition-all z-20"
@@ -279,9 +258,7 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
          <X size={20} />
        </button>
 
-       {/* Main Visualizer */}
        <div className="relative z-10 flex flex-col items-center gap-10">
-          
           <div className="relative w-64 h-64 flex items-center justify-center">
              <canvas ref={canvasRef} width={400} height={400} className="absolute inset-0 w-full h-full" />
              {status === 'connecting' && (
@@ -315,7 +292,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
              </p>
           </div>
 
-          {/* Controls */}
           <div className="flex items-center gap-5">
              <button 
                onClick={() => setIsMuted(!isMuted)}
@@ -335,7 +311,6 @@ export const VoiceMode: React.FC<VoiceModeProps> = ({ isOpen, onClose }) => {
                 <Activity size={20} />
              </button>
           </div>
-
        </div>
     </div>
   );

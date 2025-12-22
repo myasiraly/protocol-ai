@@ -38,8 +38,9 @@ You have direct access to high-end generative engines.
 *   **Videos:** If the user needs motion, demos, or cinematic visualization, you MUST append the following tag to the end of your response: \`[GENERATE_VIDEO: detailed_prompt]\`
 `;
 
-export const MODEL_NAME = 'gemini-2.5-flash';
+export const MODEL_NAME = 'gemini-2.0-flash-exp';
 export const THINKING_MODEL_NAME = 'gemini-3-pro-preview';
+export const AUDIO_MODEL_NAME = 'gemini-2.0-flash-exp';
 export const IMAGE_MODEL_NAME = 'gemini-2.5-flash-image';
-export const VIDEO_MODEL_NAME = 'veo-3.1-generate-preview';
+export const VIDEO_MODEL_NAME = 'veo-3.1-fast-generate-preview';
 export const TTS_MODEL_NAME = 'gemini-2.5-flash-preview-tts';

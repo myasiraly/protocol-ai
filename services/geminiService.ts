@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality, Content } from "@google/genai";
-import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, VIDEO_MODEL_NAME } from '../constants';
+import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, VIDEO_MODEL_NAME, AUDIO_MODEL_NAME } from '../constants';
 import { Message, MessageRole, Attachment, TrainingConfig } from '../types';
 
 const getGenAI = (): GoogleGenAI => {
@@ -80,8 +80,6 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
 
     if (msg.attachments && msg.attachments.length > 0 && role === 'user') {
       msg.attachments.forEach(att => {
-        // Handle Images, Videos, Audio, and Files
-        // Gemini supports generic inlineData for all these types if mimeType is correct
         if (att.data) {
           parts.push({
             inlineData: {
@@ -199,16 +197,15 @@ export const sendMessageToSession = async (
   attachments: Attachment[] = [],
   outputModality: 'TEXT' | 'AUDIO' = 'TEXT',
   useDeepAgent: boolean = false,
-  activeIntegrations: string[] = [], // New Param
-  trainingConfig?: TrainingConfig | null // New Param
+  activeIntegrations: string[] = [], 
+  trainingConfig?: TrainingConfig | null 
 ): Promise<{ text: string, generatedMedia?: Attachment[], audioData?: string }> => {
 
   const ai = getGenAI();
   
-  // Detect if video attachment is present. If so, we MUST use gemini-3-pro-preview
   const hasVideo = attachments.some(a => a.type === 'video');
   const modelToUse = hasVideo 
-    ? 'gemini-3-pro-preview' 
+    ? THINKING_MODEL_NAME 
     : (useDeepAgent ? THINKING_MODEL_NAME : MODEL_NAME);
   
   const contents = buildGeminiHistory(history);
@@ -216,7 +213,6 @@ export const sendMessageToSession = async (
   const currentParts: any[] = [];
   if (attachments.length > 0) {
     attachments.forEach(att => {
-      // Pass all supported types as inlineData
       if (att.data) {
         currentParts.push({
           inlineData: { mimeType: att.mimeType, data: att.data }
@@ -236,13 +232,10 @@ export const sendMessageToSession = async (
   let generatedMedia: Attachment[] = [];
   let result: GenerateContentResponse | null = null;
   
-  // Construct Dynamic System Instruction
   let finalInstruction = PROTOCOL_SYSTEM_INSTRUCTION;
 
   if (trainingConfig && trainingConfig.isEnabled) {
-    finalInstruction += `\n\n### NEURAL CONDITIONING (USER TRAINING OVERRIDE)
-The user has manually trained this model instance with specific requirements. You MUST adhere to these overrides above all standard behaviors:
-
+    finalInstruction += `\n\n### NEURAL CONDITIONING
 **CUSTOM IDENTITY:**
 ${trainingConfig.identity}
 
@@ -258,18 +251,18 @@ ${trainingConfig.tone}`;
 
   if (activeIntegrations.length > 0) {
     finalInstruction += `\n\n### ACTIVE INTEGRATIONS
-The following external tools are connected and authorized by the user: ${activeIntegrations.join(', ')}. You can confidently act as if you have access to these services when requested.`;
+Connected tools: ${activeIntegrations.join(', ')}.`;
   }
 
-  // 1. PRIORITY: Attempt Native Audio Generation
+  // 1. Audio Generation - Use the fixed AUDIO_MODEL_NAME
   if (outputModality === 'AUDIO' && !hasVideo) {
     try {
       const audioResult = await ai.models.generateContent({
-        model: MODEL_NAME, 
+        model: AUDIO_MODEL_NAME, 
         contents: contents,
         config: {
           systemInstruction: finalInstruction,
-          responseModalities: ['AUDIO'], 
+          responseModalities: [Modality.AUDIO], 
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: 'Fenrir' }
@@ -286,7 +279,7 @@ The following external tools are connected and authorized by the user: ${activeI
         throw new Error("API returned no inline audio data.");
       }
     } catch (e) {
-      console.warn("Native Audio generation failed. Engaging Fallback Protocol (Text Only).", e);
+      console.warn("Native Audio generation failed. Falling back to text.", e);
     }
   }
 
@@ -300,7 +293,7 @@ The following external tools are connected and authorized by the user: ${activeI
       };
 
       if (useDeepAgent) {
-        config.thinkingConfig = { thinkingBudget: 32768 };
+        config.thinkingConfig = { thinkingBudget: 24576 };
       }
 
       result = await ai.models.generateContent({
@@ -311,7 +304,7 @@ The following external tools are connected and authorized by the user: ${activeI
 
       responseText = result.text || "";
       if (!responseText) {
-         responseText = "[STATUS]: Request processed but no text returned.";
+         responseText = "[STATUS]: Request processed.";
       }
 
     } catch (textError: any) {
@@ -322,7 +315,7 @@ The following external tools are connected and authorized by the user: ${activeI
     }
   }
 
-  // 3. Post-Processing: Media Tags & Grounding
+  // 3. Post-Processing
   if (responseText && responseText !== "[Encrypted Audio Transmission]") {
     const imageTagRegex = /\[GENERATE_IMAGE:\s*(.*?)\]/;
     const editImageTagRegex = /\[EDIT_IMAGE:\s*(.*?)\]/;
@@ -334,23 +327,20 @@ The following external tools are connected and authorized by the user: ${activeI
 
     if (imageMatch) {
       const prompt = imageMatch[1];
-      responseText = responseText.replace(imageTagRegex, `\n[STATUS]: Generating High-Fidelity Image (Gemini 2.5 Flash)...\n`);
+      responseText = responseText.replace(imageTagRegex, `\n[STATUS]: Generating High-Fidelity Image...\n`);
       const image = await generateImage(prompt);
       if (image) generatedMedia.push(image);
     }
 
     if (editImageMatch) {
       const prompt = editImageMatch[1];
-      // Find reference image in current attachments
       const refImage = attachments.find(a => a.type === 'image' && a.data);
-      
       if (refImage && refImage.data) {
-          responseText = responseText.replace(editImageTagRegex, `\n[STATUS]: Editing Image (Gemini 2.5 Flash)...\n`);
+          responseText = responseText.replace(editImageTagRegex, `\n[STATUS]: Editing Image...\n`);
           const image = await generateImage(prompt, { data: refImage.data, mimeType: refImage.mimeType });
           if (image) generatedMedia.push(image);
       } else {
-          // Fallback to generation if no image found to edit
-          responseText = responseText.replace(editImageTagRegex, `\n[STATUS]: Generating Image (No Reference Found)...\n`);
+          responseText = responseText.replace(editImageTagRegex, `\n[STATUS]: Generating Image...\n`);
           const image = await generateImage(prompt);
           if (image) generatedMedia.push(image);
       }
@@ -358,7 +348,7 @@ The following external tools are connected and authorized by the user: ${activeI
 
     if (videoMatch) {
       const prompt = videoMatch[1];
-      responseText = responseText.replace(videoTagRegex, '\n[STATUS]: Generating Cinematic Video (Veo 3.1)... Please wait.\n');
+      responseText = responseText.replace(videoTagRegex, '\n[STATUS]: Generating Cinematic Video...\n');
       const video = await generateVideo(prompt);
       if (video) generatedMedia.push(video);
     }
@@ -375,9 +365,7 @@ The following external tools are connected and authorized by the user: ${activeI
             .filter(Boolean);
 
           const uniqueSources = Array.from(new Map(sources.map((item:any) => [item.uri, item])).values());
-          
           if (uniqueSources.length > 0) {
-            // Append as hidden JSON block for UI to parse and render as chips
             responseText += `\n\n:::GROUNDING=${JSON.stringify(uniqueSources)}:::`;
           }
         }
