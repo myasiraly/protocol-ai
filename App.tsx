@@ -37,7 +37,7 @@ const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   
-  // Default to Light Mode (Sun) as requested
+  // Default to Light Mode
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [textSize, setTextSize] = useState<'12px' | '14px' | '16px'>('16px');
 
@@ -57,6 +57,8 @@ const App: React.FC = () => {
   const [trainingConfig, setTrainingConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Ref to track the last update from Firestore to avoid redundant rollbacks
+  const lastSyncTimestampRef = useRef<number>(0);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -127,19 +129,28 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [user]);
 
+  // Enhanced sync logic: only update messages from conversations if the conversation actually changes or is strictly newer
   useEffect(() => {
     if (currentConversationId) {
       const conv = conversations.find(c => c.id === currentConversationId);
       if (conv) {
-         setMessages(conv.messages);
+         // ONLY overwrite local state if:
+         // 1. We are not currently waiting for a network response (isLoading)
+         // 2. The cloud data is strictly newer than our last known sync (prevent rollback on stale snapshot)
+         // 3. Or if the conversation length is different (force sync on refresh)
+         if (!isLoading && (conv.updatedAt > lastSyncTimestampRef.current || messages.length !== conv.messages.length)) {
+             setMessages(conv.messages);
+             lastSyncTimestampRef.current = conv.updatedAt;
+         }
          setIsIncognito(false); 
       }
     } else {
       if (!isIncognito) {
          setMessages([]);
+         lastSyncTimestampRef.current = 0;
       }
     }
-  }, [currentConversationId, conversations]);
+  }, [currentConversationId, conversations, isLoading]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -255,6 +266,7 @@ const App: React.FC = () => {
     setIsSaving(true);
     try {
       await setDoc(doc(db, 'users', user.uid, 'conversations', conv.id), conv);
+      lastSyncTimestampRef.current = conv.updatedAt;
     } catch (error) {
       console.error("Failed to save conversation to cloud", error);
     } finally {
@@ -316,9 +328,12 @@ const App: React.FC = () => {
         if (!isIncognito && currentConversationId) {
              const conv = conversations.find(c => c.id === currentConversationId);
              if (conv) {
-                 conv.messages = updatedMessages;
-                 conv.updatedAt = Date.now();
-                 await saveConversationToCloud(conv);
+                 const updatedConv = {
+                    ...conv,
+                    messages: updatedMessages,
+                    updatedAt: Date.now()
+                 };
+                 await saveConversationToCloud(updatedConv);
              }
         }
         playSound('message');
@@ -350,6 +365,7 @@ const App: React.FC = () => {
       attachments: attachments
     };
 
+    // Optimistically update UI
     const updatedMessages = [...messages, newUserMessage];
     setMessages(updatedMessages); 
     setIsLoading(true);
@@ -395,6 +411,9 @@ const App: React.FC = () => {
          try { await (window as any).aistudio.openSelectKey(); } catch (e) {}
       }
       const outputModality = (isVoice && !useDeepAgent) ? 'AUDIO' : 'TEXT';
+      
+      // CRITICAL: Ensure we pass the current 'messages' (which is history) 
+      // the new prompt is 'text'.
       const { text: responseText, generatedMedia, audioData } = await sendMessageToSession(
         messages, 
         text, 
@@ -404,6 +423,7 @@ const App: React.FC = () => {
         connectedTools,
         trainingConfig
       );
+      
       const newProtocolMessage: Message = {
         id: uuidv4(),
         role: MessageRole.PROTOCOL,
@@ -419,8 +439,10 @@ const App: React.FC = () => {
         }],
         currentVersionIndex: 0
       };
+      
       const finalMessages = [...updatedMessages, newProtocolMessage];
       setMessages(finalMessages);
+      
       if (!isIncognito && currentConversation) {
         currentConversation.messages = finalMessages;
         currentConversation.updatedAt = Date.now();

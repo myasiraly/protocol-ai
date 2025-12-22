@@ -74,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="h-20 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-2 opacity-60 text-protocol-platinum">
              <History size={14} strokeWidth={1.5} />
-             <span className="text-[9px] font-mono tracking-[0.25em] uppercase">Archives</span>
+             <span className="text-[9px] font-mono tracking-[0.25em] uppercase">Chat History</span>
           </div>
           <button onClick={onClose} className="text-protocol-muted hover:text-protocol-platinum transition-colors p-1.5 rounded-full hover:bg-protocol-border" title="Collapse">
             <PanelLeftClose size={18} strokeWidth={1} className="hidden md:block" />

@@ -118,7 +118,7 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({
                <div className="text-right hidden sm:block">
                  <div className="text-xs text-protocol-platinum font-heading font-medium tracking-wide group-hover:text-protocol-champagne transition-colors">{user.name}</div>
                </div>
-               <div className="relative w-8 h-8 rounded-full bg-protocol-charcoal border border-protocol-border overflow-hidden shadow-heavy group-hover:border-protocol-champagne/50 transition-all duration-300 flex items-center justify-center">
+               <div className="relative w-8 h-8 rounded-full bg-protocol-charcoal border border-protocol-border overflow-hidden shadow-sm group-hover:border-protocol-champagne/50 transition-all duration-300 flex items-center justify-center">
                    {user.picture ? (
                      <img src={user.picture} alt="" className="w-full h-full object-cover" />
                    ) : (
@@ -153,4 +153,3 @@ export const ProtocolHeader: React.FC<ProtocolHeaderProps> = ({
     </header>
   );
 };
-

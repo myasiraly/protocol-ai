@@ -72,6 +72,19 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
   const history: Content[] = [];
   let lastRole: 'user' | 'model' | null = null;
 
+  // Clean internal UI tags from the content to prevent model confusion in multi-turn chats
+  const sanitizeContent = (text: string) => {
+    return text
+      .replace(/:::GROUNDING=.*?:::/g, '')
+      .replace(/\[GENERATE_REPORT:.*?\]/g, '')
+      .replace(/\[GENERATE_DOC:.*?\]/g, '')
+      .replace(/\[GENERATE_SHEET:.*?\]/g, '')
+      .replace(/\[GENERATE_IMAGE:.*?\]/g, '')
+      .replace(/\[EDIT_IMAGE:.*?\]/g, '')
+      .replace(/\[GENERATE_VIDEO:.*?\]/g, '')
+      .trim();
+  };
+
   const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const msg of sortedMessages) {
@@ -91,8 +104,9 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
       });
     }
 
-    if (msg.content && msg.content.trim()) {
-      parts.push({ text: msg.content });
+    const cleanedText = sanitizeContent(msg.content);
+    if (cleanedText) {
+      parts.push({ text: cleanedText });
     }
 
     if (parts.length === 0) continue;
@@ -254,7 +268,7 @@ ${trainingConfig.tone}`;
 Connected tools: ${activeIntegrations.join(', ')}.`;
   }
 
-  // 1. Audio Generation - Use the fixed AUDIO_MODEL_NAME
+  // 1. Audio Generation
   if (outputModality === 'AUDIO' && !hasVideo) {
     try {
       const audioResult = await ai.models.generateContent({
@@ -288,7 +302,7 @@ Connected tools: ${activeIntegrations.join(', ')}.`;
     try {
       const config: any = {
         systemInstruction: finalInstruction,
-        temperature: 0.2,
+        temperature: 0.1, // Lower temperature for more stable memory retrieval
         tools: [{ googleSearch: {} }, { googleMaps: {} }],
       };
 
