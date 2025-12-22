@@ -554,6 +554,7 @@ const App: React.FC = () => {
                 message={msg} 
                 onRegenerate={handleRegenerate}
                 isLoading={isLoading}
+                userName={user?.name.split(' ')[0]}
               />
             ))}
             <div ref={messagesEndRef} />
