@@ -9,6 +9,7 @@ import { Sidebar } from './components/Sidebar';
 import { IntegrationsModal } from './components/IntegrationsModal';
 import { TrainingModal } from './components/TrainingModal';
 import { SettingsModal } from './components/SettingsModal';
+import { VoiceMode } from './components/VoiceMode';
 import { Message, MessageRole, UserProfile, Attachment, Conversation, MessageVersion, Integration, TrainingConfig } from './types';
 import { sendMessageToSession, generateConversationTitle } from './services/geminiService';
 import { playSound } from './utils/audio';
@@ -37,7 +38,6 @@ const App: React.FC = () => {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   
-  // Default to Light Mode
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [textSize, setTextSize] = useState<'12px' | '14px' | '16px'>('16px');
 
@@ -46,18 +46,19 @@ const App: React.FC = () => {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false); 
   const [isIncognito, setIsIncognito] = useState(false);
   
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
   const [isTrainingOpen, setIsTrainingOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   
   const [integrations, setIntegrations] = useState<Integration[]>(DEFAULT_INTEGRATIONS);
   const [trainingConfig, setTrainingConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  // Ref to track the last update from Firestore to avoid redundant rollbacks
   const lastSyncTimestampRef = useRef<number>(0);
 
   useEffect(() => {
@@ -129,24 +130,26 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // Enhanced sync logic: only update messages from conversations if the conversation actually changes or is strictly newer
+  // Handle synchronization between remote conversation and local messages state
   useEffect(() => {
     if (currentConversationId) {
       const conv = conversations.find(c => c.id === currentConversationId);
       if (conv) {
-         if (!isLoading && (conv.updatedAt > lastSyncTimestampRef.current || messages.length !== conv.messages.length)) {
+         // Only sync if the remote conversation is strictly newer AND we aren't currently loading a response
+         // This protects the optimistic UI state from being clobbered by a lagging Firestore snapshot
+         if (!isLoading && conv.updatedAt > lastSyncTimestampRef.current) {
              setMessages(conv.messages);
              lastSyncTimestampRef.current = conv.updatedAt;
          }
          setIsIncognito(false); 
       }
     } else {
-      if (!isIncognito) {
+      if (!isIncognito && messages.length > 0) {
          setMessages([]);
          lastSyncTimestampRef.current = 0;
       }
     }
-  }, [currentConversationId, conversations, isLoading]);
+  }, [currentConversationId, conversations, isLoading, isIncognito]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -168,6 +171,7 @@ const App: React.FC = () => {
     setCurrentConversationId(null);
     setMessages([]);
     setIsIncognito(false);
+    lastSyncTimestampRef.current = 0;
   };
 
   const handleToggleIncognito = () => {
@@ -261,8 +265,9 @@ const App: React.FC = () => {
     if (!user) return;
     setIsSaving(true);
     try {
-      await setDoc(doc(db, 'users', user.uid, 'conversations', conv.id), conv);
+      // Update local timestamp ref immediately to prevent the sync useEffect from overwriting the local state
       lastSyncTimestampRef.current = conv.updatedAt;
+      await setDoc(doc(db, 'users', user.uid, 'conversations', conv.id), conv);
     } catch (error) {
       console.error("Failed to save conversation to cloud", error);
     } finally {
@@ -276,11 +281,14 @@ const App: React.FC = () => {
     if (msgIndex === -1) return;
     const messageToRegenerate = messages[msgIndex];
     if (messageToRegenerate.role !== MessageRole.PROTOCOL) return;
+    
+    // Grab everything before this message
     const history = messages.slice(0, msgIndex);
     const lastUserMsg = history[history.length - 1];
     if (!lastUserMsg || lastUserMsg.role !== MessageRole.USER) return;
 
     setIsLoading(true);
+    setLoadingStatus('Processing regeneration...');
     playSound('click');
 
     const connectedTools = integrations.filter(i => i.isConnected).map(i => i.name);
@@ -338,6 +346,7 @@ const App: React.FC = () => {
         playSound('error');
     } finally {
         setIsLoading(false);
+        setLoadingStatus('');
     }
   };
 
@@ -361,10 +370,19 @@ const App: React.FC = () => {
       attachments: attachments
     };
 
-    // Optimistically update UI
+    // Store local copy of history for the API call
+    const currentHistory = [...messages];
+    
+    // Update local state optimistically
     const updatedMessages = [...messages, newUserMessage];
     setMessages(updatedMessages); 
     setIsLoading(true);
+    
+    if (text.toLowerCase().includes('video') || text.toLowerCase().includes('generate video')) {
+       setLoadingStatus('Initializing cinematic production. This may take a few minutes...');
+    } else {
+       setLoadingStatus('Processing directive...');
+    }
 
     if (isNewConv && !isIncognito) {
         setCurrentConversationId(convId);
@@ -390,16 +408,13 @@ const App: React.FC = () => {
           };
         }
         
-        // Initial save to Firestore
         await saveConversationToCloud(currentConversation);
         
-        // Handle Title Generation for the first message
         if (isFirstMessage) {
             generateConversationTitle(text).then((newTitle) => {
                 if (newTitle && currentConversation) {
                     currentConversation.title = newTitle;
-                    // Persist the 3-word title to Firestore immediately
-                    saveConversationToCloud(currentConversation); 
+                    saveConversationToCloud({ ...currentConversation, updatedAt: Date.now() }); 
                 }
             });
         }
@@ -414,7 +429,7 @@ const App: React.FC = () => {
       const outputModality = (isVoice && !useDeepAgent) ? 'AUDIO' : 'TEXT';
       
       const { text: responseText, generatedMedia, audioData } = await sendMessageToSession(
-        messages, 
+        currentHistory, // Send the confirmed history
         text, 
         attachments, 
         outputModality,
@@ -442,7 +457,6 @@ const App: React.FC = () => {
       const finalMessages = [...updatedMessages, newProtocolMessage];
       setMessages(finalMessages);
       
-      // Save AI response to Firestore
       if (!isIncognito && currentConversation) {
         currentConversation.messages = finalMessages;
         currentConversation.updatedAt = Date.now();
@@ -466,8 +480,39 @@ const App: React.FC = () => {
       }
     } finally {
       setIsLoading(false);
+      setLoadingStatus('');
     }
   }, [currentConversationId, messages, conversations, user, isIncognito, integrations, trainingConfig]);
+
+  const handleVoiceSessionEnd = (transcript: string) => {
+     setIsVoiceModeOpen(false);
+     if (transcript.trim()) {
+        const lines = transcript.split('\n');
+        const formattedTranscript = lines.map(line => line.trim()).filter(Boolean).join('\n\n');
+        
+        if (formattedTranscript) {
+            const voiceSummaryMsg: Message = {
+                id: uuidv4(),
+                role: MessageRole.PROTOCOL,
+                content: `### Voice Session Log\n\n${formattedTranscript}`,
+                timestamp: Date.now()
+            };
+            const updated = [...messages, voiceSummaryMsg];
+            setMessages(updated);
+            
+            if (currentConversationId) {
+                const conv = conversations.find(c => c.id === currentConversationId);
+                if (conv) {
+                    saveConversationToCloud({
+                        ...conv,
+                        messages: updated,
+                        updatedAt: Date.now()
+                    });
+                }
+            }
+        }
+     }
+  };
 
   if (isAuthLoading) {
      return (
@@ -522,6 +567,11 @@ const App: React.FC = () => {
         onSetTextSize={setTextSize}
       />
 
+      <VoiceMode 
+        isOpen={isVoiceModeOpen} 
+        onClose={handleVoiceSessionEnd} 
+      />
+
       <div className={`flex-1 flex flex-col h-full relative transition-all duration-300 ${isSidebarOpen ? 'md:ml-72' : ''}`}>
         
         <ProtocolHeader 
@@ -557,6 +607,14 @@ const App: React.FC = () => {
                 userName={user?.name.split(' ')[0]}
               />
             ))}
+            
+            {isLoading && loadingStatus && (
+               <div className="flex flex-col items-center justify-center py-10 opacity-60 animate-fade-in">
+                  <div className="w-8 h-8 border-2 border-protocol-border border-t-protocol-platinum rounded-full animate-spin mb-3"></div>
+                  <span className="text-[10px] font-mono uppercase tracking-[0.2em]">{loadingStatus}</span>
+               </div>
+            )}
+            
             <div ref={messagesEndRef} />
           </div>
         </main>
@@ -568,6 +626,7 @@ const App: React.FC = () => {
           isIncognito={isIncognito}
           onToggleIncognito={handleToggleIncognito}
           onOpenIntegrations={() => setIsIntegrationsOpen(true)}
+          onOpenVoiceMode={() => { playSound('click'); setIsVoiceModeOpen(true); }}
         />
       </div>
     </div>

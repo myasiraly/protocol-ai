@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, User, Shield, Bell, Sliders, Monitor, Volume2, CheckCircle2, ChevronRight, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain } from 'lucide-react';
+import { X, User, Shield, Bell, Sliders, Monitor, Volume2, CheckCircle2, ChevronRight, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain, Video } from 'lucide-react';
 import { UserProfile } from '../types';
 import { playSound } from '../utils/audio';
 
@@ -37,6 +37,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [accentColor, setAccentColor] = useState('platinum'); // platinum, red, champagne, emerald, blue
   
   if (!isOpen) return null;
+
+  const handleSelectVeoKey = async () => {
+    if ((window as any).aistudio) {
+      playSound('click');
+      try {
+        await (window as any).aistudio.openSelectKey();
+      } catch (e) {
+        console.error("Failed to open key selector", e);
+      }
+    }
+  };
 
   const renderSwitch = (checked: boolean, onChange: () => void) => (
     <button 
@@ -88,6 +99,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                  </div>
               </div>
 
+              {/* Veo Video Key Selection */}
+              <div className="space-y-3 pt-2">
+                 <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Creative Production</h4>
+                 <div className="p-4 border border-protocol-border rounded-xl bg-gradient-to-br from-protocol-charcoal to-protocol-obsidian">
+                    <div className="flex items-start gap-4 mb-4">
+                       <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                          <Video size={20} className="text-blue-400" />
+                       </div>
+                       <div className="flex flex-col">
+                          <span className="text-xs font-heading font-semibold text-protocol-platinum mb-1">Cinematic Video Generation</span>
+                          <span className="text-[10px] text-protocol-muted leading-relaxed">High-quality video production using Veo 3.1 requires a paid Google Cloud project API key.</span>
+                       </div>
+                    </div>
+                    <button 
+                       onClick={handleSelectVeoKey}
+                       className="w-full py-2.5 bg-protocol-platinum text-protocol-obsidian text-[10px] font-mono font-bold uppercase tracking-widest rounded-lg hover:bg-white transition-all shadow-lg flex items-center justify-center gap-2"
+                    >
+                       Connect Production Key
+                    </button>
+                    <p className="mt-2 text-[8px] text-protocol-muted text-center italic">
+                       Documentation: <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-protocol-platinum">ai.google.dev/gemini-api/docs/billing</a>
+                    </p>
+                 </div>
+              </div>
+
               <div className="space-y-3 pt-2">
                  <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Security & Billing</h4>
                  
@@ -124,7 +160,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="flex items-center gap-3">
                        <Trash2 size={16} className="text-red-500"/>
                        <div className="flex flex-col items-start">
-                          <span className="text-xs text-red-400 font-medium">Delete Account</span>
+                          <span className="text-xs red-400 font-medium">Delete Account</span>
                           <span className="text-[9px] text-red-400/60">Permanently purge all data and credentials.</span>
                        </div>
                     </div>

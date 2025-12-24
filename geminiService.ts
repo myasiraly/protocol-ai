@@ -58,20 +58,22 @@ export const generateConversationTitle = async (message: string): Promise<string
   try {
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Generate a very short, concise title (max 5 words) for a conversation that starts with this message: "${message}". Do not use quotes.`,
+      contents: `Create a 3-word title for this: "${message}". Return only the 3 words, no quotes or punctuation.`,
     });
-    return response.text?.trim() || "New Protocol";
+    return response.text?.trim() || "New Protocol Record";
   } catch (e) {
     console.error("Title generation failed", e);
-    return "New Protocol";
+    return "New Protocol Record";
   }
 };
 
-// --- Helper: History Sanitization ---
+/**
+ * Robust history builder that ensures alternating User/Model roles 
+ * and merges consecutive turns of the same role into parts.
+ */
 const buildGeminiHistory = (messages: Message[]): Content[] => {
   const history: Content[] = [];
   
-  // Clean internal UI tags from the content to prevent model confusion
   const sanitizeContent = (text: string) => {
     return text
       .replace(/:::GROUNDING=.*?:::/g, '')
@@ -84,12 +86,20 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
       .trim();
   };
 
+  // Ensure chronological order
   const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const msg of sortedMessages) {
     const role = msg.role === MessageRole.USER ? 'user' : 'model';
     const parts: any[] = [];
 
+    // Add text content
+    const cleanedText = sanitizeContent(msg.content);
+    if (cleanedText && cleanedText !== "[Encrypted Audio Transmission]") {
+      parts.push({ text: cleanedText });
+    }
+
+    // Add attachments for user messages
     if (msg.attachments && msg.attachments.length > 0 && role === 'user') {
       msg.attachments.forEach(att => {
         if (att.data) {
@@ -103,13 +113,9 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
       });
     }
 
-    const cleanedText = sanitizeContent(msg.content);
-    if (cleanedText) {
-      parts.push({ text: cleanedText });
-    }
-
     if (parts.length === 0) continue;
 
+    // Merge consecutive blocks of same role or push new one
     const lastEntry = history[history.length - 1];
     if (lastEntry && lastEntry.role === role) {
       lastEntry.parts = [...lastEntry.parts, ...parts];
@@ -118,13 +124,10 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
     }
   }
 
-  // Ensure History strictly alternates for model stability (Gemini requirements)
-  // 1. Must start with 'user'
-  if (history.length > 0 && history[0].role !== 'user') {
+  // Gemini history MUST start with a user message
+  while (history.length > 0 && history[0].role !== 'user') {
      history.shift();
   }
-  
-  // 2. Must not end with 'model' if we are about to append a user message (handled in sendMessageToSession)
   
   return history;
 };
@@ -145,9 +148,7 @@ const generateImage = async (prompt: string, referenceImage?: { data: string, mi
     parts.push({ text: prompt });
 
     const config: any = {
-      imageConfig: {
-        aspectRatio: "16:9",
-      }
+      imageConfig: { aspectRatio: "16:9" }
     };
 
     const response = await ai.models.generateContent({
@@ -174,10 +175,11 @@ const generateImage = async (prompt: string, referenceImage?: { data: string, mi
 const generateVideo = async (prompt: string): Promise<Attachment | null> => {
   const ai = getGenAI();
   try {
-    if ((window as any).aistudio && await (window as any).aistudio.hasSelectedApiKey()) {
-       // Proceed
-    } else if ((window as any).aistudio) {
-       await (window as any).aistudio.openSelectKey();
+    if ((window as any).aistudio) {
+      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await (window as any).aistudio.openSelectKey();
+      }
     }
 
     let operation = await ai.models.generateVideos({
@@ -191,7 +193,7 @@ const generateVideo = async (prompt: string): Promise<Attachment | null> => {
     });
 
     while (!operation.done) {
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await new Promise(resolve => setTimeout(resolve, 10000));
       operation = await ai.operations.getVideosOperation({ operation: operation });
     }
 
@@ -201,11 +203,15 @@ const generateVideo = async (prompt: string): Promise<Attachment | null> => {
       return {
         type: 'video',
         mimeType: 'video/mp4',
-        uri: `${videoUri}&key=${apiKey}`
+        uri: `${videoUri}&key=${apiKey}`,
+        name: prompt.substring(0, 30) + "..."
       };
     }
-  } catch (e) {
-    console.error("Video generation failed", e);
+  } catch (e: any) {
+    console.error("Video generation failed:", e);
+    if (e.message?.includes("Requested entity was not found") && (window as any).aistudio) {
+       await (window as any).aistudio.openSelectKey();
+    }
   }
   return null;
 };
@@ -224,14 +230,18 @@ export const sendMessageToSession = async (
 
   const ai = getGenAI();
   
-  const hasVideo = attachments.some(a => a.type === 'video');
-  const modelToUse = hasVideo 
+  const hasVideoInput = attachments.some(a => a.type === 'video');
+  const modelToUse = hasVideoInput 
     ? THINKING_MODEL_NAME 
     : (useDeepAgent ? THINKING_MODEL_NAME : MODEL_NAME);
   
+  // Build history and add the NEW current message to ensure correct context
   const contents = buildGeminiHistory(history);
   
   const currentParts: any[] = [];
+  if (newMessage.trim()) {
+    currentParts.push({ text: newMessage });
+  }
   if (attachments.length > 0) {
     attachments.forEach(att => {
       if (att.data) {
@@ -241,13 +251,8 @@ export const sendMessageToSession = async (
       }
     });
   }
-  if (newMessage.trim()) {
-    currentParts.push({ text: newMessage });
-  } else if (currentParts.length === 0) {
-    currentParts.push({ text: '...' });
-  }
 
-  // Ensure strict alternation: if last in history is 'user', append this text to that entry's parts
+  // Ensure history ends with a user block
   if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
       contents[contents.length - 1].parts.push(...currentParts);
   } else {
@@ -270,7 +275,7 @@ export const sendMessageToSession = async (
   }
 
   // 1. Audio Generation
-  if (outputModality === 'AUDIO' && !hasVideo) {
+  if (outputModality === 'AUDIO' && !hasVideoInput) {
     try {
       const audioResult = await ai.models.generateContent({
         model: AUDIO_MODEL_NAME, 
@@ -299,7 +304,7 @@ export const sendMessageToSession = async (
   }
 
   // 2. Text Generation
-  if (outputModality === 'TEXT' || (outputModality === 'AUDIO' && !audioData) || hasVideo) {
+  if (outputModality === 'TEXT' || (outputModality === 'AUDIO' && !audioData) || hasVideoInput) {
     try {
       const config: any = {
         systemInstruction: finalInstruction,
