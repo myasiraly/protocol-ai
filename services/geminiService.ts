@@ -58,12 +58,12 @@ export const generateConversationTitle = async (message: string): Promise<string
   try {
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Generate a very short, concise title (max 5 words) for a conversation that starts with this message: "${message}". Do not use quotes.`,
+      contents: `Create a 3-word title for this: "${message}". Return only the 3 words, no quotes or punctuation.`,
     });
-    return response.text?.trim() || "New Protocol";
+    return response.text?.trim() || "New Protocol Record";
   } catch (e) {
     console.error("Title generation failed", e);
-    return "New Protocol";
+    return "New Protocol Record";
   }
 };
 

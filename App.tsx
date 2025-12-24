@@ -134,10 +134,6 @@ const App: React.FC = () => {
     if (currentConversationId) {
       const conv = conversations.find(c => c.id === currentConversationId);
       if (conv) {
-         // ONLY overwrite local state if:
-         // 1. We are not currently waiting for a network response (isLoading)
-         // 2. The cloud data is strictly newer than our last known sync (prevent rollback on stale snapshot)
-         // 3. Or if the conversation length is different (force sync on refresh)
          if (!isLoading && (conv.updatedAt > lastSyncTimestampRef.current || messages.length !== conv.messages.length)) {
              setMessages(conv.messages);
              lastSyncTimestampRef.current = conv.updatedAt;
@@ -378,26 +374,31 @@ const App: React.FC = () => {
     if (!isIncognito && convId) {
         const existing = conversations.find(c => c.id === convId);
         if (!existing) {
-        const title = text.length > 30 ? text.substring(0, 30) + '...' : text;
-        currentConversation = {
-            id: convId,
-            title: title || 'New Protocol',
-            messages: updatedMessages,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        };
+          const initialTitle = "New Briefing...";
+          currentConversation = {
+              id: convId,
+              title: initialTitle,
+              messages: updatedMessages,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+          };
         } else {
-        currentConversation = {
-            ...existing,
-            messages: updatedMessages,
-            updatedAt: Date.now()
-        };
+          currentConversation = {
+              ...existing,
+              messages: updatedMessages,
+              updatedAt: Date.now()
+          };
         }
+        
+        // Initial save to Firestore
         await saveConversationToCloud(currentConversation);
+        
+        // Handle Title Generation for the first message
         if (isFirstMessage) {
             generateConversationTitle(text).then((newTitle) => {
                 if (newTitle && currentConversation) {
                     currentConversation.title = newTitle;
+                    // Persist the 3-word title to Firestore immediately
                     saveConversationToCloud(currentConversation); 
                 }
             });
@@ -412,8 +413,6 @@ const App: React.FC = () => {
       }
       const outputModality = (isVoice && !useDeepAgent) ? 'AUDIO' : 'TEXT';
       
-      // CRITICAL: Ensure we pass the current 'messages' (which is history) 
-      // the new prompt is 'text'.
       const { text: responseText, generatedMedia, audioData } = await sendMessageToSession(
         messages, 
         text, 
@@ -443,6 +442,7 @@ const App: React.FC = () => {
       const finalMessages = [...updatedMessages, newProtocolMessage];
       setMessages(finalMessages);
       
+      // Save AI response to Firestore
       if (!isIncognito && currentConversation) {
         currentConversation.messages = finalMessages;
         currentConversation.updatedAt = Date.now();

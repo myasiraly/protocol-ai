@@ -175,38 +175,34 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message, onRegenerate,
   };
 
   return (
-    <div className={`w-full flex ${isProtocol ? 'justify-start' : 'justify-end'} mb-10 animate-slide-up px-2 md:px-4 group`}>
+    <div className={`w-full flex ${isProtocol ? 'justify-start' : 'justify-end'} mb-12 animate-slide-up px-2 md:px-0 group`}>
       <div className={`flex flex-col w-full ${isProtocol ? 'max-w-4xl' : 'max-w-2xl'} ${isProtocol ? 'items-start' : 'items-end'}`}>
         
         {/* Role Header */}
-        <div className={`flex items-center gap-3 mb-2 px-1 transition-opacity duration-500 ${isProtocol ? 'flex-row' : 'flex-row-reverse opacity-60'}`}>
-             <div className={`flex items-center justify-center w-6 h-6 rounded-full border ${isProtocol ? 'bg-protocol-charcoal border-protocol-border' : 'bg-protocol-platinum text-protocol-obsidian border-protocol-platinum'}`}>
+        <div className={`flex items-center gap-3 mb-2.5 px-1 transition-all duration-500 ${isProtocol ? 'flex-row' : 'flex-row-reverse opacity-40 hover:opacity-100'}`}>
+             <div className={`flex items-center justify-center w-6 h-6 rounded-full border shadow-sm ${isProtocol ? 'bg-protocol-charcoal border-protocol-border' : 'bg-protocol-platinum text-protocol-obsidian border-protocol-platinum'}`}>
                 {isProtocol ? <ProtocolLogo size={14} className="text-protocol-platinum" /> : <User size={12} />}
              </div>
              <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-protocol-muted flex items-center gap-2">
                 {isProtocol ? (
                     <>
                         <span className="text-protocol-platinum font-bold">PROTOCOL</span>
-                        <span className="opacity-40">//</span>
-                        <span>SYSTEM</span>
-                        <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse ml-1" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-protocol-champagne/80 shadow-[0_0_8px_rgba(224,192,151,0.5)] animate-pulse ml-1" />
                     </>
                 ) : (
-                    <>
-                        <span>OPERATOR</span>
-                        <span className="opacity-40">//</span>
-                        <span className="text-protocol-platinum">{userName ? userName.toUpperCase() : '001'}</span>
-                    </>
+                    <span className="text-protocol-platinum font-bold tracking-[0.3em]">
+                        {userName ? userName.toUpperCase() : 'USER'}
+                    </span>
                 )}
              </span>
              
              {isProtocol && (
-                <div className="flex items-center gap-2 ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                   <button onClick={handleCopy} title="Copy Directive" className="text-protocol-muted hover:text-protocol-platinum transition-colors p-1 rounded-md hover:bg-protocol-border">
+                <div className="flex items-center gap-1.5 ml-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                   <button onClick={handleCopy} title="Copy Transcript" className="text-protocol-muted hover:text-protocol-platinum transition-colors p-1.5 rounded-lg hover:bg-protocol-border">
                         {isCopied ? <Check size={12} /> : <Copy size={12} />}
                    </button>
                    {displayAudio && (
-                      <button onClick={handlePlayNativeAudio} title="Play Transmission" className={`text-protocol-muted hover:text-protocol-platinum transition-colors p-1 rounded-md hover:bg-protocol-border ${isPlaying ? 'text-protocol-champagne' : ''}`}>
+                      <button onClick={handlePlayNativeAudio} title="Play Transmission" className={`text-protocol-muted hover:text-protocol-platinum transition-colors p-1.5 rounded-lg hover:bg-protocol-border ${isPlaying ? 'text-protocol-champagne' : ''}`}>
                          <Volume2 size={12} className={isPlaying ? 'animate-pulse' : ''} />
                       </button>
                    )}
@@ -218,40 +214,44 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message, onRegenerate,
         <div className={`
             relative w-full overflow-hidden transition-all duration-500
             ${isProtocol 
-                ? 'bg-protocol-charcoal/30 border-l-2 border-protocol-champagne/40 backdrop-blur-md rounded-r-3xl rounded-bl-3xl p-6 md:p-8 shadow-sm ring-1 ring-white/[0.03]' 
-                : 'bg-protocol-platinum/[0.03] border border-protocol-border/30 rounded-l-2xl rounded-tr-2xl p-4 md:p-5'
+                ? 'bg-protocol-charcoal/40 border-l-[3px] border-protocol-champagne/60 backdrop-blur-3xl rounded-r-[2rem] rounded-bl-[2rem] p-7 md:p-9 shadow-heavy ring-1 ring-white/[0.04]' 
+                : 'bg-protocol-platinum/[0.03] border border-protocol-border/40 rounded-l-2xl rounded-tr-2xl p-4 md:p-5 hover:bg-protocol-platinum/[0.05]'
             }
         `}>
-            {/* Export Cards - Only for Protocol */}
+            {/* Dark Mode Mesh Background for Protocol */}
+            {isProtocol && <div className="absolute inset-0 bg-mesh opacity-40 pointer-events-none z-[-1]" />}
+
+            {/* Export Cards - Enhanced for Dark Mode */}
             {isProtocol && (reportTitle || docTitle || sheetTitle) && (
-                <div className="p-5 bg-protocol-input/50 border border-protocol-border/50 rounded-2xl mb-8 shadow-inner w-full animate-fade-in">
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-protocol-platinum text-protocol-obsidian flex items-center justify-center rounded-xl shadow-lg">
-                                {sheetTitle ? <FileSpreadsheet size={22}/> : <FileText size={22} />}
+                <div className="p-6 bg-protocol-obsidian/40 border border-protocol-border/60 rounded-2xl mb-8 shadow-inner w-full animate-fade-in ring-1 ring-inset ring-white/[0.02]">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                        <div className="flex items-center gap-5">
+                            <div className="w-14 h-14 bg-protocol-platinum text-protocol-obsidian flex items-center justify-center rounded-xl shadow-2xl relative overflow-hidden group/export">
+                                <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover/export:opacity-100 transition-opacity" />
+                                {sheetTitle ? <FileSpreadsheet size={24}/> : <FileText size={24} />}
                             </div>
                             <div>
-                                <h4 className="text-xs font-heading font-bold text-protocol-platinum uppercase tracking-wider">{reportTitle || docTitle || sheetTitle}</h4>
-                                <div className="flex items-center gap-2 text-[8px] font-mono text-protocol-muted mt-1">
-                                    <ShieldCheck size={10} className="text-emerald-500/70" />
-                                    <span>PROTOCOL VERIFIED ASSET // ENCRYPTED</span>
+                                <h4 className="text-[11px] font-heading font-bold text-protocol-platinum uppercase tracking-widest mb-1.5">{reportTitle || docTitle || sheetTitle}</h4>
+                                <div className="flex items-center gap-2 text-[9px] font-mono text-protocol-muted uppercase tracking-wider">
+                                    <ShieldCheck size={11} className="text-emerald-500/80" />
+                                    <span>Verified // High Fidelity</span>
                                 </div>
                             </div>
                         </div>
                         <div className="flex gap-2 w-full md:w-auto">
                             {reportTitle && (
-                                <button onClick={() => handleExport('pdf')} disabled={isGenerating} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-protocol-platinum text-protocol-obsidian text-[9px] font-mono font-bold uppercase tracking-widest rounded-lg hover:bg-protocol-muted transition-all active:scale-95 shadow-md">
-                                    {isGenerating ? <RotateCw size={14} className="animate-spin" /> : <FileDown size={14} />} PDF
+                                <button onClick={() => handleExport('pdf')} disabled={isGenerating} className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-6 py-3 bg-protocol-platinum text-protocol-obsidian text-[10px] font-mono font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-all active:scale-95 shadow-glow">
+                                    {isGenerating ? <RotateCw size={14} className="animate-spin" /> : <FileDown size={16} />} PDF
                                 </button>
                             )}
                             {docTitle && (
-                                <button onClick={() => handleExport('doc')} disabled={isGenerating} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-protocol-platinum text-protocol-obsidian text-[9px] font-mono font-bold uppercase tracking-widest rounded-lg hover:bg-protocol-muted transition-all active:scale-95 shadow-md">
-                                    {isGenerating ? <RotateCw size={14} className="animate-spin" /> : <FileEdit size={14} />} DOC
+                                <button onClick={() => handleExport('doc')} disabled={isGenerating} className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-6 py-3 bg-protocol-platinum text-protocol-obsidian text-[10px] font-mono font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-all active:scale-95 shadow-glow">
+                                    {isGenerating ? <RotateCw size={14} className="animate-spin" /> : <FileEdit size={16} />} DOC
                                 </button>
                             )}
                             {sheetTitle && (
-                                <button onClick={() => handleExport('sheet')} disabled={isGenerating} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-protocol-platinum text-protocol-obsidian text-[9px] font-mono font-bold uppercase tracking-widest rounded-lg hover:bg-protocol-muted transition-all active:scale-95 shadow-md">
-                                    {isGenerating ? <RotateCw size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />} SHEET
+                                <button onClick={() => handleExport('sheet')} disabled={isGenerating} className="flex-1 md:flex-none flex items-center justify-center gap-2.5 px-6 py-3 bg-protocol-platinum text-protocol-obsidian text-[10px] font-mono font-bold uppercase tracking-[0.15em] rounded-xl hover:bg-white transition-all active:scale-95 shadow-glow">
+                                    {isGenerating ? <RotateCw size={14} className="animate-spin" /> : <FileSpreadsheet size={16} />} CSV
                                 </button>
                             )}
                         </div>
@@ -259,43 +259,44 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message, onRegenerate,
                 </div>
             )}
 
-            {/* Text Content */}
+            {/* Text Content - Optimized for Dark Backgrounds */}
             <div className={`
-                font-sans text-[14px] leading-relaxed tracking-wide
-                ${isProtocol ? 'text-protocol-platinum/90' : 'text-protocol-platinum/80 text-right'}
+                font-sans text-[15px] leading-[1.8] tracking-[0.01em]
+                ${isProtocol ? 'text-protocol-platinum/95' : 'text-protocol-platinum/80 text-right'}
                 whitespace-pre-wrap
             `}>
                 {displayContent.split('\n').map((line, idx) => {
                     const trimmed = line.trim();
                     if (trimmed.startsWith('###')) {
                         return (
-                            <div key={idx} className={`mt-8 mb-4 flex items-center gap-3 ${isProtocol ? '' : 'justify-end'}`}>
-                                {isProtocol && <div className="w-1 h-5 bg-protocol-champagne/40 rounded-full" />}
-                                <h3 className="font-heading text-base font-bold text-protocol-platinum uppercase tracking-tight">
+                            <div key={idx} className={`mt-10 mb-5 flex items-center gap-4 ${isProtocol ? '' : 'justify-end'}`}>
+                                {isProtocol && <div className="w-1 h-6 bg-protocol-champagne/50 rounded-full" />}
+                                <h3 className="font-heading text-lg font-bold text-protocol-platinum tracking-tight uppercase">
                                     {trimmed.replace(/^###\s*/, '')}
                                 </h3>
-                                {!isProtocol && <div className="w-1 h-5 bg-protocol-platinum/40 rounded-full" />}
+                                {!isProtocol && <div className="w-1 h-6 bg-protocol-platinum/25 rounded-full" />}
                             </div>
                         );
                     }
                     if (trimmed.startsWith('* ')) {
                         return (
-                            <div key={idx} className={`flex items-start gap-4 mb-3 ${isProtocol ? 'pl-2' : 'flex-row-reverse pr-2'}`}>
-                                <div className={`w-1 h-1 mt-2.5 shrink-0 rounded-full ${isProtocol ? 'bg-protocol-champagne/60' : 'bg-protocol-platinum/40'}`} />
-                                <span className={isProtocol ? '' : 'text-right'}>{formatText(trimmed.replace(/^\*\s*/, ''))}</span>
+                            <div key={idx} className={`flex items-start gap-4 mb-3.5 ${isProtocol ? 'pl-2' : 'flex-row-reverse pr-2'}`}>
+                                <div className={`w-1.5 h-1.5 mt-2.5 shrink-0 rounded-full ${isProtocol ? 'bg-protocol-champagne/40 shadow-[0_0_5px_rgba(224,192,151,0.3)]' : 'bg-protocol-platinum/30'}`} />
+                                <span className={`${isProtocol ? '' : 'text-right'} leading-relaxed`}>{formatText(trimmed.replace(/^\*\s*/, ''))}</span>
                             </div>
                         );
                     }
                     if (trimmed === '') return <div key={idx} className="h-4" />;
-                    return <p key={idx} className="mb-4">{formatText(line)}</p>;
+                    return <p key={idx} className="mb-4 last:mb-0">{formatText(line)}</p>;
                 })}
             </div>
 
-            {/* Grounding Sources - Only for Protocol */}
+            {/* Grounding Sources - Subdued for focus */}
             {isProtocol && sources.length > 0 && (
-                <div className="mt-10 flex flex-wrap gap-2 animate-fade-in border-t border-protocol-border/30 pt-6">
-                    <div className="w-full text-[9px] font-mono text-protocol-muted uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
-                        <Cpu size={10} className="text-protocol-champagne opacity-60" /> Intelligence Nodes & Validation
+                <div className="mt-12 flex flex-wrap gap-2.5 animate-fade-in border-t border-protocol-border pt-7">
+                    <div className="w-full text-[9px] font-mono text-protocol-muted uppercase tracking-[0.25em] mb-3 flex items-center gap-3">
+                        <Cpu size={12} className="text-protocol-champagne/60" /> 
+                        <span>Intelligence Sources // Validation</span>
                     </div>
                     {sources.map((src, i) => (
                         <a 
@@ -303,29 +304,28 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message, onRegenerate,
                             href={src.uri} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="flex items-center gap-3 px-4 py-2 bg-protocol-obsidian/40 border border-protocol-border/50 rounded-xl hover:border-protocol-platinum/40 hover:bg-protocol-charcoal transition-all group active:scale-95 shadow-sm"
+                            className="flex items-center gap-3 px-4 py-2 bg-white/[0.03] border border-protocol-border rounded-xl hover:border-protocol-platinum/50 hover:bg-white/[0.06] transition-all group active:scale-95 shadow-sm"
                         >
-                            {src.type === 'map' ? <MapPin size={11} className="text-emerald-500/80" /> : <Globe size={11} className="text-blue-400/80" />}
-                            <span className="text-[10px] text-protocol-muted group-hover:text-protocol-platinum transition-colors truncate max-w-[140px] font-medium tracking-tight">
+                            {src.type === 'map' ? <MapPin size={12} className="text-emerald-500/70" /> : <Globe size={12} className="text-blue-400/70" />}
+                            <span className="text-[10px] text-protocol-muted group-hover:text-protocol-platinum transition-colors truncate max-w-[160px] font-medium tracking-tight">
                                 {src.title}
                             </span>
-                            <ExternalLink size={9} className="text-protocol-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <ExternalLink size={10} className="text-protocol-muted/40 group-hover:text-protocol-platinum/60 transition-opacity" />
                         </a>
                     ))}
                 </div>
             )}
             
-            {/* Media Rendering */}
+            {/* Media Rendering - High Contrast Borders */}
             {displayMedia && displayMedia.length > 0 && (
-                <div className={`grid grid-cols-1 gap-6 mt-8 ${isProtocol ? '' : 'max-w-md ml-auto'}`}>
+                <div className={`grid grid-cols-1 gap-8 mt-10 ${isProtocol ? '' : 'max-w-md ml-auto'}`}>
                     {displayMedia.map((item, idx) => (
-                        <div key={idx} className="group relative overflow-hidden border border-protocol-border/50 bg-protocol-charcoal shadow-2xl rounded-2xl ring-1 ring-white/5">
-                            {item.type === 'image' && <img src={`data:${item.mimeType};base64,${item.data}`} alt="" className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105" />}
+                        <div key={idx} className="group relative overflow-hidden border border-protocol-border bg-black shadow-2xl rounded-[1.5rem] ring-1 ring-white/10 transition-transform duration-500 hover:ring-white/20">
+                            {item.type === 'image' && <img src={`data:${item.mimeType};base64,${item.data}`} alt="" className="w-full h-auto object-cover transition-transform duration-1000 group-hover:scale-105" />}
                             {item.type === 'video' && <video src={item.uri} controls className="w-full h-auto" />}
                             
-                            {/* Media Overlay status */}
-                            <div className="absolute top-3 right-3 px-2 py-1 bg-protocol-obsidian/60 backdrop-blur-md border border-white/10 rounded-md text-[8px] font-mono text-protocol-platinum uppercase tracking-widest pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                                High fidelity // Generated
+                            <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/60 backdrop-blur-xl border border-white/10 rounded-lg text-[9px] font-mono text-protocol-platinum uppercase tracking-widest pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+                                High Fidelity Asset
                             </div>
                         </div>
                     ))}
@@ -333,15 +333,15 @@ export const MessageCard: React.FC<MessageCardProps> = ({ message, onRegenerate,
             )}
         </div>
         
-        {/* User Attachments (Outside bubble for clean UI) */}
+        {/* User Attachments */}
         {!isProtocol && message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap justify-end gap-2 mt-3">
+            <div className="flex flex-wrap justify-end gap-3 mt-4">
                 {message.attachments.map((att, idx) => (
-                    <div key={idx} className="h-12 w-12 border border-protocol-border bg-protocol-input/50 flex items-center justify-center rounded-lg overflow-hidden shadow-sm hover:border-protocol-platinum transition-colors cursor-pointer group">
+                    <div key={idx} className="h-14 w-14 border border-protocol-border bg-protocol-charcoal flex items-center justify-center rounded-xl overflow-hidden shadow-lg hover:border-protocol-platinum/60 transition-all cursor-pointer group hover:-translate-y-1">
                         {att.type === 'image' ? (
-                            <img src={`data:${att.mimeType};base64,${att.data}`} alt="" className="h-full w-full object-cover group-hover:scale-110 transition-transform" />
+                            <img src={`data:${att.mimeType};base64,${att.data}`} alt="" className="h-full w-full object-cover group-hover:scale-110 transition-transform duration-500" />
                         ) : (
-                            <FileText size={16} className="text-protocol-muted" />
+                            <FileText size={20} className="text-protocol-muted group-hover:text-protocol-platinum transition-colors" />
                         )}
                     </div>
                 ))}
