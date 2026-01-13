@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality, Content } from "@google/genai";
-import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, VIDEO_MODEL_NAME, AUDIO_MODEL_NAME } from './constants';
+import { PROTOCOL_SYSTEM_INSTRUCTION, MODEL_NAME, THINKING_MODEL_NAME, TTS_MODEL_NAME, IMAGE_MODEL_NAME, AUDIO_MODEL_NAME } from './constants';
 import { Message, MessageRole, Attachment, TrainingConfig } from './types';
 
 const getGenAI = (): GoogleGenAI => {
@@ -82,24 +82,20 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
       .replace(/\[GENERATE_SHEET:.*?\]/g, '')
       .replace(/\[GENERATE_IMAGE:.*?\]/g, '')
       .replace(/\[EDIT_IMAGE:.*?\]/g, '')
-      .replace(/\[GENERATE_VIDEO:.*?\]/g, '')
       .trim();
   };
 
-  // Ensure chronological order
   const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
 
   for (const msg of sortedMessages) {
     const role = msg.role === MessageRole.USER ? 'user' : 'model';
     const parts: any[] = [];
 
-    // Add text content
     const cleanedText = sanitizeContent(msg.content);
     if (cleanedText && cleanedText !== "[Encrypted Audio Transmission]") {
       parts.push({ text: cleanedText });
     }
 
-    // Add attachments for user messages
     if (msg.attachments && msg.attachments.length > 0 && role === 'user') {
       msg.attachments.forEach(att => {
         if (att.data) {
@@ -115,7 +111,6 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
 
     if (parts.length === 0) continue;
 
-    // Merge consecutive blocks of same role or push new one
     const lastEntry = history[history.length - 1];
     if (lastEntry && lastEntry.role === role) {
       lastEntry.parts = [...lastEntry.parts, ...parts];
@@ -124,7 +119,6 @@ const buildGeminiHistory = (messages: Message[]): Content[] => {
     }
   }
 
-  // Gemini history MUST start with a user message
   while (history.length > 0 && history[0].role !== 'user') {
      history.shift();
   }
@@ -172,50 +166,6 @@ const generateImage = async (prompt: string, referenceImage?: { data: string, mi
   return null;
 };
 
-const generateVideo = async (prompt: string): Promise<Attachment | null> => {
-  const ai = getGenAI();
-  try {
-    if ((window as any).aistudio) {
-      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        await (window as any).aistudio.openSelectKey();
-      }
-    }
-
-    let operation = await ai.models.generateVideos({
-      model: VIDEO_MODEL_NAME,
-      prompt: prompt,
-      config: {
-        numberOfVideos: 1,
-        resolution: '1080p',
-        aspectRatio: '16:9'
-      }
-    });
-
-    while (!operation.done) {
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      operation = await ai.operations.getVideosOperation({ operation: operation });
-    }
-
-    const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (videoUri) {
-      const apiKey = process.env.API_KEY;
-      return {
-        type: 'video',
-        mimeType: 'video/mp4',
-        uri: `${videoUri}&key=${apiKey}`,
-        name: prompt.substring(0, 30) + "..."
-      };
-    }
-  } catch (e: any) {
-    console.error("Video generation failed:", e);
-    if (e.message?.includes("Requested entity was not found") && (window as any).aistudio) {
-       await (window as any).aistudio.openSelectKey();
-    }
-  }
-  return null;
-};
-
 // --- Core Message Handler ---
 
 export const sendMessageToSession = async (
@@ -230,12 +180,9 @@ export const sendMessageToSession = async (
 
   const ai = getGenAI();
   
-  const hasVideoInput = attachments.some(a => a.type === 'video');
-  const modelToUse = hasVideoInput 
-    ? THINKING_MODEL_NAME 
-    : (useDeepAgent ? THINKING_MODEL_NAME : MODEL_NAME);
+  // Always use Flash models for free operation
+  const modelToUse = useDeepAgent ? THINKING_MODEL_NAME : MODEL_NAME;
   
-  // Build history and add the NEW current message to ensure correct context
   const contents = buildGeminiHistory(history);
   
   const currentParts: any[] = [];
@@ -252,7 +199,6 @@ export const sendMessageToSession = async (
     });
   }
 
-  // Ensure history ends with a user block
   if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
       contents[contents.length - 1].parts.push(...currentParts);
   } else {
@@ -274,8 +220,8 @@ export const sendMessageToSession = async (
     finalInstruction += `\n\n### ACTIVE INTEGRATIONS\nConnected tools: ${activeIntegrations.join(', ')}.`;
   }
 
-  // 1. Audio Generation
-  if (outputModality === 'AUDIO' && !hasVideoInput) {
+  // 1. Audio Generation (Experimental Free Model)
+  if (outputModality === 'AUDIO') {
     try {
       const audioResult = await ai.models.generateContent({
         model: AUDIO_MODEL_NAME, 
@@ -303,17 +249,18 @@ export const sendMessageToSession = async (
     }
   }
 
-  // 2. Text Generation
-  if (outputModality === 'TEXT' || (outputModality === 'AUDIO' && !audioData) || hasVideoInput) {
+  // 2. Text Generation (Flash Free Model)
+  if (outputModality === 'TEXT' || (outputModality === 'AUDIO' && !audioData)) {
     try {
       const config: any = {
         systemInstruction: finalInstruction,
-        temperature: 0.1, 
+        temperature: 0.2, 
         tools: [{ googleSearch: {} }, { googleMaps: {} }],
       };
 
       if (useDeepAgent) {
-        config.thinkingConfig = { thinkingBudget: 24576 };
+        // Flash models now support a thinking budget in the new API
+        config.thinkingConfig = { thinkingBudget: 16384 };
       }
 
       result = await ai.models.generateContent({
@@ -330,20 +277,18 @@ export const sendMessageToSession = async (
     } catch (textError: any) {
       console.error("Text Generation Failed:", textError);
       let friendlyError = textError.message || "Unknown Connection Failure";
-      if (friendlyError.includes('429')) friendlyError = "[SYSTEM ALERT]: Rate Limit Exceeded.";
+      if (friendlyError.includes('429')) friendlyError = "[SYSTEM ALERT]: Quota Limit Exceeded.";
       throw new Error(friendlyError);
     }
   }
 
-  // 3. Post-Processing (Media Tags)
+  // 3. Post-Processing (Media Tags - Removing Video)
   if (responseText && responseText !== "[Encrypted Audio Transmission]") {
     const imageTagRegex = /\[GENERATE_IMAGE:\s*(.*?)\]/g;
     const editImageTagRegex = /\[EDIT_IMAGE:\s*(.*?)\]/g;
-    const videoTagRegex = /\[GENERATE_VIDEO:\s*(.*?)\]/g;
 
     const imageMatches = [...responseText.matchAll(imageTagRegex)];
     const editImageMatches = [...responseText.matchAll(editImageTagRegex)];
-    const videoMatches = [...responseText.matchAll(videoTagRegex)];
 
     for (const match of imageMatches) {
        const img = await generateImage(match[1]);
@@ -355,12 +300,6 @@ export const sendMessageToSession = async (
        const refImage = attachments.find(a => a.type === 'image' && a.data);
        const img = await generateImage(match[1], refImage ? { data: refImage.data!, mimeType: refImage.mimeType } : undefined);
        if (img) generatedMedia.push(img);
-       responseText = responseText.replace(match[0], '');
-    }
-
-    for (const match of videoMatches) {
-       const vid = await generateVideo(match[1]);
-       if (vid) generatedMedia.push(vid);
        responseText = responseText.replace(match[0], '');
     }
 

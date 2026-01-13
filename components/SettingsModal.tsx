@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { X, User, Shield, Bell, Sliders, Monitor, Volume2, CheckCircle2, ChevronRight, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain, Video } from 'lucide-react';
+import { X, User, Shield, Bell, Sliders, Monitor, Volume2, CheckCircle2, ChevronRight, Trash2, CreditCard, Sparkles, AlertTriangle, Download, Type, Palette, Laptop, Brain } from 'lucide-react';
 import { UserProfile } from '../types';
 import { playSound } from '../utils/audio';
 
@@ -30,24 +30,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     marketing: false
   });
   
-  // New States for requested features
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
-  const [accentColor, setAccentColor] = useState('platinum'); // platinum, red, champagne, emerald, blue
+  const [accentColor, setAccentColor] = useState('platinum');
   
   if (!isOpen) return null;
-
-  const handleSelectVeoKey = async () => {
-    if ((window as any).aistudio) {
-      playSound('click');
-      try {
-        await (window as any).aistudio.openSelectKey();
-      } catch (e) {
-        console.error("Failed to open key selector", e);
-      }
-    }
-  };
 
   const renderSwitch = (checked: boolean, onChange: () => void) => (
     <button 
@@ -79,9 +67,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div className="text-xs text-protocol-muted font-mono truncate">{user?.email}</div>
                  </div>
-                 <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-[9px] text-emerald-500 font-mono uppercase tracking-wider hidden sm:block">
-                    Verified ID
-                 </div>
               </div>
 
               {/* Memory Settings */}
@@ -99,33 +84,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                  </div>
               </div>
 
-              {/* Veo Video Key Selection */}
               <div className="space-y-3 pt-2">
-                 <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Creative Production</h4>
-                 <div className="p-4 border border-protocol-border rounded-xl bg-gradient-to-br from-protocol-charcoal to-protocol-obsidian">
-                    <div className="flex items-start gap-4 mb-4">
-                       <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                          <Video size={20} className="text-blue-400" />
-                       </div>
-                       <div className="flex flex-col">
-                          <span className="text-xs font-heading font-semibold text-protocol-platinum mb-1">Cinematic Video Generation</span>
-                          <span className="text-[10px] text-protocol-muted leading-relaxed">High-quality video production using Veo 3.1 requires a paid Google Cloud project API key.</span>
-                       </div>
-                    </div>
-                    <button 
-                       onClick={handleSelectVeoKey}
-                       className="w-full py-2.5 bg-protocol-platinum text-protocol-obsidian text-[10px] font-mono font-bold uppercase tracking-widest rounded-lg hover:bg-white transition-all shadow-lg flex items-center justify-center gap-2"
-                    >
-                       Connect Production Key
-                    </button>
-                    <p className="mt-2 text-[8px] text-protocol-muted text-center italic">
-                       Documentation: <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-protocol-platinum">ai.google.dev/gemini-api/docs/billing</a>
-                    </p>
-                 </div>
-              </div>
-
-              <div className="space-y-3 pt-2">
-                 <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Security & Billing</h4>
+                 <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Security</h4>
                  
                  <div className="flex items-center justify-between p-3 border border-protocol-border rounded-lg hover:bg-protocol-border/30 transition-colors cursor-pointer group">
                     <div className="flex items-center gap-3">
@@ -133,17 +93,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                        <div className="flex flex-col">
                           <span className="text-xs text-protocol-platinum">Security Protocols</span>
                           <span className="text-[9px] text-protocol-muted">2FA, Password Rotation</span>
-                       </div>
-                    </div>
-                    <ChevronRight size={14} className="text-protocol-muted" />
-                 </div>
-                 
-                 <div className="flex items-center justify-between p-3 border border-protocol-border rounded-lg hover:bg-protocol-border/30 transition-colors cursor-pointer group">
-                    <div className="flex items-center gap-3">
-                       <CreditCard size={16} className="text-protocol-muted group-hover:text-protocol-platinum transition-colors"/>
-                       <div className="flex flex-col">
-                          <span className="text-xs text-protocol-platinum">Billing Support</span>
-                          <span className="text-[9px] text-protocol-muted">Invoices and Plan Management</span>
                        </div>
                     </div>
                     <ChevronRight size={14} className="text-protocol-muted" />
@@ -218,21 +167,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <ChevronRight size={14} className="text-emerald-500/50 group-hover:text-emerald-500" />
                   </button>
               </div>
-
-               <div className="pt-6 border-t border-protocol-border space-y-4">
-                  <div className="flex items-center justify-between">
-                     <span className="text-xs text-protocol-platinum">Compact Density</span>
-                     <div className="w-8 h-4 bg-protocol-border rounded-full relative cursor-not-allowed opacity-50">
-                        <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-protocol-muted rounded-full"></div>
-                     </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                     <span className="text-xs text-protocol-platinum">Reduced Motion</span>
-                     <div className="w-8 h-4 bg-protocol-border rounded-full relative cursor-not-allowed opacity-50">
-                        <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-protocol-muted rounded-full"></div>
-                     </div>
-                  </div>
-               </div>
           </div>
         );
 
@@ -247,8 +181,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-1 bg-protocol-input border border-protocol-border rounded-xl overflow-hidden divide-y divide-protocol-border">
                   {[
                     { label: 'Deep Research Complete', desc: 'Alerts when background analysis finishes.', key: 'push' },
-                    { label: 'Security Digests', desc: 'Daily summary of security events.', key: 'email' },
-                    { label: 'Ecosystem Updates', desc: 'News about Protocol features.', key: 'marketing' }
+                    { label: 'Security Digests', desc: 'Daily summary of security events.', key: 'email' }
                   ].map((item: any, idx) => (
                     <div key={idx} className="flex items-center justify-between p-4 hover:bg-protocol-border/30 transition-colors">
                         <div className="flex flex-col gap-0.5">
@@ -273,14 +206,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* System Behavior */}
               <div className="space-y-3">
                  <h4 className="text-[10px] font-mono text-protocol-muted uppercase tracking-widest pl-1">Behavior</h4>
-                 
-                 <div className="flex items-center justify-between p-3 border border-protocol-border rounded-lg">
-                    <div className="flex items-center gap-3">
-                       <Laptop size={16} className="text-protocol-platinum"/>
-                       <span className="text-xs text-protocol-platinum">Launch at Login</span>
-                    </div>
-                    {renderSwitch(launchAtLogin, () => setLaunchAtLogin(!launchAtLogin))}
-                 </div>
                  
                  <div className="flex items-center justify-between p-3 border border-protocol-border rounded-lg">
                     <div className="flex items-center gap-3">
@@ -317,22 +242,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                  </div>
               </div>
-
-              {/* Updates */}
-               <div className="pt-6 mt-6 border-t border-protocol-border">
-                  <div className="flex items-center justify-between text-[10px] text-protocol-muted font-mono mb-2">
-                      <span>Protocol Version</span>
-                      <span>v2.4.1 (Stable)</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-protocol-muted font-mono mb-4">
-                      <span>Build ID</span>
-                      <span>8f9a2b3c</span>
-                  </div>
-                  <button onClick={() => playSound('click')} className="w-full py-2 border border-protocol-border rounded-lg text-xs text-protocol-platinum hover:bg-protocol-border/30 transition-colors flex items-center justify-center gap-2">
-                     <Download size={14} />
-                     Check for Updates
-                  </button>
-               </div>
            </div>
          );
     }
@@ -385,7 +294,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Content Area */}
         <div className="flex-1 flex flex-col bg-protocol-charcoal relative">
-            {/* Mobile Header / Close Button */}
             <div className="absolute top-4 right-4 z-10">
                <button onClick={onClose} className="p-2 text-protocol-muted hover:text-protocol-platinum hover:bg-protocol-border rounded-full transition-colors"><X size={20} /></button>
             </div>
@@ -394,7 +302,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                {renderContent()}
             </div>
         </div>
-
       </div>
     </div>
   );
